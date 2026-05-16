@@ -1,0 +1,16 @@
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.4
+requests==2.31.0
+pygetwindow==0.0.9
+python-dotenv==1.0.1
+groq>=0.4.1
+faster-whisper
+sounddevice
+scipy
+numpy
+pyautogui==0.9.54
+python-docx
+PyMuPDF
+openpyxl
+

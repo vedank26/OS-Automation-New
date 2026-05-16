@@ -1,0 +1,36 @@
+# Python backend
+/backend/__pycache__/
+/backend/*.py[cod]
+/backend/*.pyd
+/backend/env/
+/backend/venv/
+/backend/.env
+
+# Flutter frontend
+/frontend/.dart_tool/
+/frontend/.idea/
+/frontend/.gradle/
+/frontend/build/
+/frontend/.pub/
+/frontend/.flutter-plugins
+/frontend/.flutter-plugins-dependencies
+/frontend/.packages
+/frontend/.metadata
+/frontend/generated_plugin_registrant.dart
+/frontend/ios/Pods/
+/frontend/ios/Runner.xcworkspace/
+/frontend/android/.gradle/
+/frontend/android/app/debug/
+/frontend/android/app/profile/
+/frontend/android/app/release/
+**/Flutter/Flutter.framework
+**/Flutter/Flutter.podspec
+**/Flutter/Flutter.xcframework
+**/Generated.xcconfig
+
+# IDE / OS files
+/.vscode/
+/*.iml
+.DS_Store
+Thumbs.db
+.env
