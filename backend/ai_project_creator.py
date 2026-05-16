@@ -2,8 +2,8 @@ import json
 import os
 import subprocess
 import time
-from dotenv import load_dotenv
-from groq import Groq
+from dotenv import load_dotenv  # type: ignore[import-untyped]
+from groq import Groq  # type: ignore[import-untyped]
 
 load_dotenv()
 
@@ -126,7 +126,7 @@ CRITICAL: Your response must START with {{ and END with }}. Nothing else."""
 
         time.sleep(1)
         try:
-            import pygetwindow as gw
+            import pygetwindow as gw  # type: ignore[import-untyped]
             windows = gw.getWindowsWithTitle("Visual Studio Code")
             if windows:
                 windows[0].activate()

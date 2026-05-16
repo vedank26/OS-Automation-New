@@ -4,6 +4,7 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import automation_1
+from app_launcher import normalize_command_text
 from speech_engine import listen, listen_short
 
 def start_assistant():
@@ -31,11 +32,12 @@ def start_assistant():
                 "switch", "double", "right", "save", "execute"
             ]
 
+            normalized_command = normalize_command_text(command)
             has_keyword = any(
-                command.lower().startswith(k) for k in known_keywords
+                normalized_command.startswith(k) for k in known_keywords
             )
 
-            if not has_keyword and "youtube" not in command.lower():
+            if not has_keyword and "youtube" not in normalized_command:
                 print(f"🎵 No keyword — treating as YouTube search")
                 command = f"play {command} on youtube"
                 print(f"⚙️ Modified command: {command}")

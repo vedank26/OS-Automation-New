@@ -1,10 +1,9 @@
 import os
 import re
-import shutil
 import subprocess
 import time
-import webbrowser
 import json
+from pathlib import Path
 from urllib.parse import quote_plus
 
 import pyautogui
@@ -12,6 +11,13 @@ import requests
 from dotenv import load_dotenv
 
 from ai_project_creator import create_ai_project, parse_create_command
+from app_launcher import (
+    bring_window_to_front,
+    launch_app,
+    normalize_command_text,
+    open_directory,
+    open_url,
+)
 from retry_engine import run_project_with_repair
 
 
@@ -33,38 +39,6 @@ def save_last_results(results):
     pass
 
 FILLER_WORDS = {"on", "the", "a", "an", "in", "at"}
-
-APP_ALIASES = {
-    "calc": ["calc"],
-    "calculator": ["calc", "calculator"],
-    "chrome": ["chrome", "google chrome"],
-    "discord": ["discord"],
-    "explorer": ["explorer"],
-    "file explorer": ["explorer"],
-    "files": ["explorer"],
-    "google chrome": ["chrome", "google chrome"],
-    "notepad": ["notepad"],
-    "spotify": ["spotify"],
-    "task manager": ["taskmgr"],
-    "telegram": ["telegram"],
-    "vs code": ["code"],
-    "vscode": ["code"],
-    "visual studio code": ["code"],
-    "whatsapp": ["whatsapp"],
-    "youtube": ["youtube"],
-}
-
-WEB_FALLBACKS = {
-    "chatgpt": ("ChatGPT", "https://chat.openai.com"),
-    "discord": ("Discord", "https://discord.com/app"),
-    "github": ("GitHub", "https://github.com"),
-    "gmail": ("Gmail", "https://mail.google.com"),
-    "instagram": ("Instagram", "https://instagram.com"),
-    "linkedin": ("LinkedIn", "https://linkedin.com"),
-    "spotify": ("Spotify", "https://open.spotify.com"),
-    "whatsapp": ("WhatsApp", "https://web.whatsapp.com"),
-    "youtube": ("YouTube", "https://youtube.com"),
-}
 
 # ─────────────────────────────────────────
 # Project-intent keywords — if a command
@@ -99,139 +73,6 @@ def _result(message: str, options: list[str] | None = None):
     if options is not None:
         payload["options"] = options
     return payload
-
-
-def _bring_window_to_front(keywords: list[str]):
-    try:
-        import pygetwindow as gw
-        time.sleep(1.5)
-        all_windows = gw.getAllTitles()
-        for keyword in keywords:
-            for title in all_windows:
-                if keyword.lower() in title.lower() and title.strip():
-                    try:
-                        windows = gw.getWindowsWithTitle(title)
-                        if not windows:
-                            continue
-                        window = windows[0]
-                        try:
-                            if window.isMinimized:
-                                window.restore()
-                                time.sleep(0.3)
-                            window.activate()
-                            time.sleep(0.3)
-                            return "focused"
-                        except Exception:
-                            continue
-                    except Exception:
-                        continue
-        return "opened"
-    except Exception:
-        return "opened"
-
-
-def _clean_app_name(app_name: str) -> str:
-    app_name = re.sub(r"\b(please|app|application)\b", "", app_name, flags=re.IGNORECASE)
-    return " ".join(app_name.split()).strip()
-
-
-def _display_app_name(app_name: str) -> str:
-    fallback = WEB_FALLBACKS.get(app_name)
-    if fallback:
-        return fallback[0]
-    return " ".join(part.capitalize() for part in app_name.split())
-
-
-def _powershell_quote(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
-
-
-def _launch_with_start_apps(app_name: str) -> bool:
-    try:
-        pattern = f"*{app_name}*"
-        quoted = _powershell_quote(pattern)
-        command = (
-            "Get-StartApps | "
-            f"Where-Object {{ $_.Name -like {quoted} -or $_.AppID -like {quoted} }} | "
-            "Select-Object -First 1 -ExpandProperty AppID"
-        )
-        completed = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", command],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        app_id = completed.stdout.strip().splitlines()[0] if completed.stdout.strip() else ""
-        if not app_id:
-            return False
-        subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{app_id}"])
-        return True
-    except Exception:
-        return False
-
-
-def _launch_candidate(candidate: str) -> bool:
-    try:
-        resolved = shutil.which(candidate)
-        if resolved:
-            subprocess.Popen([resolved])
-            return True
-
-        if os.path.exists(candidate):
-            os.startfile(candidate)
-            return True
-
-        if _launch_with_start_apps(candidate):
-            return True
-
-        return False
-    except Exception:
-        return False
-
-
-def _open_web_fallback(app_name: str):
-    fallback = WEB_FALLBACKS.get(app_name)
-    if not fallback:
-        return None
-
-    display_name, url = fallback
-    webbrowser.open(url)
-    _bring_window_to_front([display_name, "chrome", "edge", "firefox", "browser"])
-    return _result(
-        f"{display_name} desktop app not found. "
-        f"Opened {display_name} Web instead."
-    )
-
-
-def _open_dynamic_app(app_name: str):
-    app_name = _clean_app_name(app_name).lower()
-    if not app_name:
-        return _result("Please specify which app to open.")
-
-    if re.fullmatch(r"\d+", app_name):
-        return None
-
-    if app_name == "yt":
-        app_name = "youtube"
-
-    candidates = []
-    candidates.extend(APP_ALIASES.get(app_name, []))
-    candidates.append(app_name)
-
-    seen = set()
-    candidates = [item for item in candidates if not (item in seen or seen.add(item))]
-
-    for candidate in candidates:
-        if _launch_candidate(candidate):
-            focus_words = [app_name, *[c.replace(":", "") for c in candidates]]
-            _bring_window_to_front(focus_words)
-            return _result(f"{_display_app_name(app_name)} desktop app opened.")
-
-    fallback_result = _open_web_fallback(app_name)
-    if fallback_result is not None:
-        return fallback_result
-
-    return _result(f"Could not open {_display_app_name(app_name)}.")
 
 
 def search_youtube(query: str):
@@ -283,9 +124,9 @@ def play_video(index: int):
 
     video = LAST_RESULTS[index]
     video_url = f"https://www.youtube.com/watch?v={video['videoId']}&autoplay=1"
-    webbrowser.open(video_url)
-    _bring_window_to_front(["youtube", "edge", "chrome"])
-    return _result(f"Playing video {index + 1}: '{video['title']}'")
+    if open_url(video_url, "YouTube", ["youtube", "edge", "chrome"]):
+        return _result(f"Playing video {index + 1}: '{video['title']}'")
+    return _result("[ERROR] Could not open YouTube.")
 
 
 def _get_video_index(command: str):
@@ -363,7 +204,7 @@ def execute_command(command: str):
 
     try:
         raw_command = command.strip()
-        normalized_command = raw_command.lower()
+        normalized_command = normalize_command_text(raw_command)
 
         if not normalized_command:
             return _result("No command provided.")
@@ -372,11 +213,12 @@ def execute_command(command: str):
         # 🖥️ APPS — must be FIRST
         # ─────────────────────────────────────────
 
-        open_match = re.match(r"^open\s+(.+)$", raw_command, flags=re.IGNORECASE)
+        open_match = re.match(r"^open\s+(.+)$", normalized_command)
         if open_match:
-            app_result = _open_dynamic_app(open_match.group(1))
-            if app_result is not None:
-                return app_result
+            app_name = open_match.group(1).strip()
+            if not re.fullmatch(r"\d+", app_name):
+                app_result = launch_app(app_name)
+                return _result(app_result.message)
 
         # ─────────────────────────────────────────
         # 🎯 VIDEO SELECTION (after YouTube search)
@@ -416,9 +258,9 @@ def execute_command(command: str):
                     "options": [result["title"] for result in results],
                 }
 
-            webbrowser.open("https://www.youtube.com")
-            _bring_window_to_front(["youtube", "edge", "chrome"])
-            return _result("YouTube opened.")
+            if open_url("https://www.youtube.com", "YouTube", ["youtube", "edge", "chrome"]):
+                return _result("[SUCCESS] YouTube opened.")
+            return _result("[ERROR] Could not open YouTube.")
 
         # ─────────────────────────────────────────
         # 🎵 PLAY without youtube keyword
@@ -476,8 +318,7 @@ def execute_command(command: str):
             desktop = os.path.join(os.path.expanduser("~"), "Desktop")
             path = os.path.join(desktop, folder_name)
             os.makedirs(path, exist_ok=True)
-            subprocess.run(f'explorer "{desktop}"', shell=True)
-            _bring_window_to_front(["file explorer", "explorer", "desktop"])
+            open_directory(desktop)
             return _result(f"Folder '{folder_name}' created on Desktop.")
 
         # ─────────────────────────────────────────
@@ -501,7 +342,7 @@ def execute_command(command: str):
                 f" && cd {app_name} && npm install"
             )
             subprocess.Popen(f'start cmd /k "{vite_cmd}"', shell=True, cwd=desktop)
-            _bring_window_to_front(["cmd", "command prompt", "terminal"])
+            bring_window_to_front(["cmd", "command prompt", "terminal"])
             return _result(
                 f"⚛️ Creating React app '{app_name}' on Desktop using Vite.\n"
                 f"📦 npm install will run automatically after scaffolding.\n"
@@ -526,16 +367,20 @@ def execute_command(command: str):
                 f.write('# Main Python file\n\nprint("Hello World")\n')
             with open(os.path.join(project_path, "README.md"), "w", encoding="utf-8") as f:
                 f.write(f"# {project_name}\n\nCreated by FlowForge AI")
-            subprocess.Popen(f'code "{project_path}"', shell=True)
-            _bring_window_to_front(["visual studio code", "vscode"])
-            return _result(f"Python project '{project_name}' created and opened in VS Code.")
+            launch_result = launch_app("vs code", [project_path])
+            if launch_result.success:
+                return _result(f"Python project '{project_name}' created and opened in VS Code.")
+            return _result(
+                f"Python project '{project_name}' created. "
+                f"{launch_result.message}"
+            )
 
         # ─────────────────────────────────────────
         # 🤖 AI PROJECT CREATION
         # ─────────────────────────────────────────
 
         elif _is_project_command(normalized_command):
-            description, project_name = parse_create_command(raw_command)
+            description, project_name = parse_create_command(normalized_command)
             if description:
                 creation_result = create_ai_project(description, project_name)
                 if "✅ AI Project Created" in creation_result:
@@ -640,7 +485,7 @@ def execute_command(command: str):
                             f'&& npm run {run_script}'
                         )
                         subprocess.Popen(f'start cmd /k "{run_cmd}"', shell=True)
-                        _bring_window_to_front(["cmd", "command prompt"])
+                        bring_window_to_front(["cmd", "command prompt"])
                         port = "5173" if run_script == "dev" else "3000"
                         return _result(
                             f"🚀 Running '{project_name}'\n"
@@ -654,7 +499,7 @@ def execute_command(command: str):
                             f'&& node index.js'
                         )
                         subprocess.Popen(f'start cmd /k "{run_cmd}"', shell=True)
-                        _bring_window_to_front(["cmd", "command prompt"])
+                        bring_window_to_front(["cmd", "command prompt"])
                         return _result(f"🚀 Running '{project_name}' — Node.js app")
 
                 elif "main.py" in files_in_project:
@@ -692,7 +537,7 @@ def execute_command(command: str):
                         run_cmd = f'cd /d "{latest_project}" && python main.py'
                         dep_msg = "▶️ Running directly"
                     subprocess.Popen(f'start cmd /k "{run_cmd}"', shell=True)
-                    _bring_window_to_front(["cmd", "command prompt"])
+                    bring_window_to_front(["cmd", "command prompt"])
                     return _result(
                         f"🐍 Running '{project_name}'\n"
                         f"{dep_msg}\n"
@@ -702,7 +547,7 @@ def execute_command(command: str):
                 elif "app.py" in files_in_project:
                     run_cmd = f'cd /d "{latest_project}" && pip install flask && python app.py'
                     subprocess.Popen(f'start cmd /k "{run_cmd}"', shell=True)
-                    _bring_window_to_front(["cmd", "command prompt"])
+                    bring_window_to_front(["cmd", "command prompt"])
                     return _result(
                         f"🌐 Running '{project_name}'\n"
                         f"🌐 Will open on http://localhost:5000"
@@ -711,7 +556,7 @@ def execute_command(command: str):
                 elif "manage.py" in files_in_project:
                     run_cmd = f'cd /d "{latest_project}" && pip install django && python manage.py runserver'
                     subprocess.Popen(f'start cmd /k "{run_cmd}"', shell=True)
-                    _bring_window_to_front(["cmd", "command prompt"])
+                    bring_window_to_front(["cmd", "command prompt"])
                     return _result(
                         f"🌐 Running '{project_name}'\n"
                         f"🌐 Will open on http://localhost:8000"
@@ -719,9 +564,9 @@ def execute_command(command: str):
 
                 elif "index.html" in files_in_project:
                     index_file = os.path.join(latest_project, "index.html")
-                    webbrowser.open(f"file:///{index_file}")
-                    _bring_window_to_front(["chrome", "edge", "firefox"])
-                    return _result(f"🌐 Opened '{project_name}' in browser ✅")
+                    if open_url(Path(index_file).resolve().as_uri(), "Browser", ["chrome", "edge", "firefox"]):
+                        return _result(f"🌐 Opened '{project_name}' in browser ✅")
+                    return _result(f"[ERROR] Could not open '{project_name}' in browser.")
 
                 else:
                     subprocess.Popen(
@@ -749,12 +594,12 @@ def execute_command(command: str):
             query = " ".join(query.split()).strip()
             if query:
                 url = f"https://www.google.com/search?q={quote_plus(query)}"
-                webbrowser.open(url)
-                _bring_window_to_front(["chrome", "edge", "google"])
-                return _result(f"Searching Google for '{query}'.")
-            webbrowser.open("https://www.google.com")
-            _bring_window_to_front(["chrome", "edge"])
-            return _result("Google opened.")
+                if open_url(url, "Google", ["chrome", "edge", "google"]):
+                    return _result(f"Searching Google for '{query}'.")
+                return _result("[ERROR] Could not open Google search.")
+            if open_url("https://www.google.com", "Google", ["chrome", "edge", "google"]):
+                return _result("Google opened.")
+            return _result("[ERROR] Could not open Google.")
 
         # ─────────────────────────────────────────
         # 📸 SCREENSHOT
@@ -767,8 +612,7 @@ def execute_command(command: str):
             filepath = os.path.join(desktop, filename)
             screenshot = pyautogui.screenshot()
             screenshot.save(filepath)
-            subprocess.run(f'explorer "{desktop}"', shell=True)
-            _bring_window_to_front(["file explorer", "explorer", "desktop"])
+            open_directory(desktop)
             return _result("Screenshot saved to Desktop.")
 
         # ─────────────────────────────────────────
@@ -922,23 +766,23 @@ def execute_command(command: str):
         # ─────────────────────────────────────────
 
         elif "focus chrome" in normalized_command:
-            _bring_window_to_front(["chrome"])
+            bring_window_to_front(["chrome"])
             return _result("Chrome focused.")
 
         elif "focus edge" in normalized_command:
-            _bring_window_to_front(["edge"])
+            bring_window_to_front(["edge"])
             return _result("Edge focused.")
 
         elif "focus vscode" in normalized_command:
-            _bring_window_to_front(["visual studio code", "vscode"])
+            bring_window_to_front(["visual studio code", "vscode"])
             return _result("VS Code focused.")
 
         elif "focus notepad" in normalized_command:
-            _bring_window_to_front(["notepad"])
+            bring_window_to_front(["notepad"])
             return _result("Notepad focused.")
 
         elif "focus terminal" in normalized_command:
-            _bring_window_to_front(["cmd", "powershell", "terminal", "command prompt"])
+            bring_window_to_front(["cmd", "powershell", "terminal", "command prompt"])
             return _result("Terminal focused.")
 
         elif "switch window" in normalized_command:
@@ -971,12 +815,17 @@ def execute_command(command: str):
         # ─────────────────────────────────────────
 
         elif "start coding session" in normalized_command:
-            subprocess.run("code", shell=True)
-            subprocess.run("start chrome", shell=True)
             folder_path = os.path.join(os.path.expanduser("~"), "Desktop", "TodayWork")
             os.makedirs(folder_path, exist_ok=True)
-            _bring_window_to_front(["visual studio code", "vscode"])
-            return _result("Coding session started. VS Code and Chrome opened, TodayWork folder created.")
+            vscode_result = launch_app("vs code")
+            chrome_result = launch_app("chrome")
+            if vscode_result.success and chrome_result.success:
+                return _result("Coding session started. VS Code and Chrome opened, TodayWork folder created.")
+            failures = [result.message for result in [vscode_result, chrome_result] if not result.success]
+            return _result(
+                "Coding session started partially. "
+                f"TodayWork folder created. {' '.join(failures)}"
+            )
 
         # ─────────────────────────────────────────
         # 🎵 MUSIC
@@ -984,7 +833,7 @@ def execute_command(command: str):
 
         elif "play music" in normalized_command or "play song" in normalized_command:
             subprocess.run("start wmplayer", shell=True)
-            _bring_window_to_front(["windows media player", "wmplayer"])
+            bring_window_to_front(["windows media player", "wmplayer"])
             return _result("Music player opened.")
 
         # ─────────────────────────────────────────
