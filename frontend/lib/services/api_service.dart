@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ApiService {
@@ -119,5 +120,88 @@ class ApiService {
         headers: {"Content-Type": "application/json"},
       ).timeout(const Duration(seconds: 3));
     } catch (_) {}
+  }
+
+  // ─────────────────────────────────────────
+  // 📝 ASSIGNMENT SOLVER API CALLS
+  // ─────────────────────────────────────────
+
+  /// Solve an assignment from a text description
+  static Future<Map<String, dynamic>> solveAssignmentDescription(
+      String description) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse("$baseUrl/solve-assignment/description"),
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({"description": description}),
+          )
+          .timeout(const Duration(seconds: 300));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      return {
+        "result": "Server error: ${response.statusCode}",
+        "status": "error",
+      };
+    } on TimeoutException {
+      return {"result": "Request timed out. The AI is still working.", "status": "timeout"};
+    } catch (e) {
+      return {"result": "Error: ${e.toString()}", "status": "error"};
+    }
+  }
+
+  /// Solve an assignment by uploading a file
+  static Future<Map<String, dynamic>> solveAssignmentFile(
+      String filePath) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        return {"result": "File not found: $filePath", "status": "error"};
+      }
+
+      final fileName = filePath.split(Platform.pathSeparator).last;
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse("$baseUrl/solve-assignment/file"),
+      );
+
+      request.files.add(
+        await http.MultipartFile.fromPath('file', filePath),
+      );
+
+      final streamedResponse =
+          await request.send().timeout(const Duration(seconds: 300));
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      return {
+        "result": "Server error: ${response.statusCode}",
+        "status": "error",
+      };
+    } on TimeoutException {
+      return {"result": "Request timed out. The AI is still working.", "status": "timeout"};
+    } catch (e) {
+      return {"result": "Error: ${e.toString()}", "status": "error"};
+    }
+  }
+
+  /// Get list of recently solved assignment files
+  static Future<Map<String, dynamic>> getAssignmentHistory() async {
+    try {
+      final response = await http
+          .get(Uri.parse("$baseUrl/solve-assignment/history"))
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      return {"files": [], "status": "error"};
+    } catch (e) {
+      return {"files": [], "status": "error"};
+    }
   }
 }

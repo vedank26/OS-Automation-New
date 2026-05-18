@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../widgets/terminal_log.dart';
 import '../widgets/command_input.dart';
 import '../widgets/quick_commands.dart';
+import 'assignment_solver_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -339,6 +340,13 @@ class _HomeScreenState extends State<HomeScreen>
     await _startListening();
   }
 
+  /// Opens the Assignment Solver screen with Describe + Upload tabs
+  void _openAssignmentSolver() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AssignmentSolverScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -357,6 +365,7 @@ class _HomeScreenState extends State<HomeScreen>
 
             QuickCommands(
               onCommand: _sendCommand,
+              onAssignmentSolver: _openAssignmentSolver,
             ),
 
             CommandInput(

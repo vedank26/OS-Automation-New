@@ -7,7 +7,10 @@ class QuickCommands extends StatelessWidget {
   /// Called when a chip fires with a ready-to-send command string.
   final void Function(String command) onCommand;
 
-  const QuickCommands({super.key, required this.onCommand});
+  /// Called when the assignment solver chip is tapped (navigates to solver screen)
+  final VoidCallback? onAssignmentSolver;
+
+  const QuickCommands({super.key, required this.onCommand, this.onAssignmentSolver});
 
   // ── chip definitions ────────────────────────────────────────────
   static const List<_ChipDef> _chips = [
@@ -26,7 +29,7 @@ class QuickCommands extends StatelessWidget {
     _ChipDef('🖥', 'Task Mgr',      'open task manager',    false),
     _ChipDef('⬇️', 'Scroll Down',   'scroll down',          false),
     _ChipDef('⬆️', 'Scroll Up',     'scroll up',            false),
-    _ChipDef('🖥', 'Show Desktop',  'show desktop',         false),
+    _ChipDef('🖥', 'Show Desktop',  'show desktop',          false),
   ];
 
   @override
@@ -43,14 +46,136 @@ class QuickCommands extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        itemCount: _chips.length,
+        itemCount: _chips.length + 1, // +1 for assignment solver
         separatorBuilder: (_, __) => const SizedBox(width: 6),
-        itemBuilder: (ctx, i) => _QuickChip(
-          def: _chips[i],
-          onTap: () => _handleTap(ctx, _chips[i]),
+        itemBuilder: (ctx, i) {
+          if (i == 0) {
+            // Assignment Solver special chip (first position)
+            return _AssignmentSolverChip(
+              onTap: () {
+                if (onAssignmentSolver != null) {
+                  onAssignmentSolver!();
+                } else {
+                  // Fallback: open dialog to type description
+                  _showAssignmentDialog(ctx);
+                }
+              },
+            );
+          }
+          return _QuickChip(
+            def: _chips[i - 1],
+            onTap: () => _handleTap(ctx, _chips[i - 1]),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showAssignmentDialog(BuildContext context) async {
+    final ctrl = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.7),
+      builder: (ctx) => Dialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: const BorderSide(color: AppColors.border),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Solve Assignment',
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 15,
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Describe your assignment or provide a filename:',
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                maxLines: 3,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                  color: AppColors.textPrimary,
+                ),
+                cursorColor: AppColors.accentBlue,
+                decoration: InputDecoration(
+                  hintText: 'e.g. "about Newton\'s laws" or "homework.pdf"',
+                  hintStyle: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    color: AppColors.textSecondary.withOpacity(0.5),
+                  ),
+                  enabledBorder: const OutlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.border),
+                    borderRadius: BorderRadius.all(Radius.circular(6)),
+                  ),
+                  focusedBorder: const OutlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.accentBlue),
+                    borderRadius: BorderRadius.all(Radius.circular(6)),
+                  ),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                onSubmitted: (v) => Navigator.of(ctx).pop(v),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(null),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accentBlue,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      textStyle: const TextStyle(fontFamily: 'monospace'),
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(ctrl.text),
+                    child: const Text('Solve'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
+    if (result != null && result.trim().isNotEmpty) {
+      onCommand('solve my assignment ${result.trim()}');
+    }
   }
 
   Future<void> _handleTap(BuildContext context, _ChipDef chip) async {
@@ -58,7 +183,6 @@ class QuickCommands extends StatelessWidget {
       onCommand(chip.command);
       return;
     }
-    // Show appropriate dialog
     final result = await _showInputDialog(context, chip.dialogKind!);
     if (result != null && result.trim().isNotEmpty) {
       switch (chip.dialogKind!) {
@@ -206,6 +330,73 @@ class _ChipDef {
     this.needsInput, [
     this.dialogKind,
   ]);
+}
+
+// ──────────────────────────────────────────────────────────────
+// Special Assignment Solver Chip with distinctive styling
+// ──────────────────────────────────────────────────────────────
+class _AssignmentSolverChip extends StatefulWidget {
+  final VoidCallback onTap;
+  const _AssignmentSolverChip({required this.onTap});
+
+  @override
+  State<_AssignmentSolverChip> createState() => _AssignmentSolverChipState();
+}
+
+class _AssignmentSolverChipState extends State<_AssignmentSolverChip> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+        decoration: BoxDecoration(
+          gradient: _pressed
+              ? LinearGradient(
+                  colors: [
+                    AppColors.accentBlue.withOpacity(0.3),
+                    AppColors.accentBlue.withOpacity(0.15),
+                  ],
+                )
+              : LinearGradient(
+                  colors: [
+                    AppColors.accentBlue.withOpacity(0.15),
+                    AppColors.accentBlue.withOpacity(0.05),
+                  ],
+                ),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: _pressed ? AppColors.accentBlue : AppColors.accentBlue.withOpacity(0.5),
+            width: _pressed ? 1.2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('📝', style: TextStyle(fontSize: 13)),
+            const SizedBox(width: 5),
+            Text(
+              'Solve',
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 11.5,
+                color: AppColors.accentBlue,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ──────────────────────────────────────────────────────────────
