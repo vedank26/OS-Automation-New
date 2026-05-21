@@ -40,12 +40,12 @@ except ImportError:
 SAMPLE_RATE = 16000
 CHANNELS = 1
 CHUNK_SECONDS = 0.1
-SILENCE_SECONDS = 2.0
+SILENCE_SECONDS = 2.5
 INITIAL_SILENCE_SECONDS = 10.0
 MAX_RECORD_SECONDS = 120.0
-ENERGY_THRESHOLD = 0.012
-START_SPEECH_CHUNKS = 2
-MAX_NO_SPEECH_PROBABILITY = 0.65
+ENERGY_THRESHOLD = 0.006
+START_SPEECH_CHUNKS = 1
+MAX_NO_SPEECH_PROBABILITY = 0.75
 
 # ── HINGLISH CONFIG ────────────────────────────────────────
 ENABLE_HINGLISH = True
@@ -331,8 +331,10 @@ def listen_once() -> str:
         segments, info = model.transcribe(
             temp_path,
             language=None,  # Let Whisper auto-detect (supports ~99 langs)
-            beam_size=5,
+            beam_size=8,
             vad_filter=True,
+            word_timestamps=True,
+            condition_on_previous_text=False,
         )
         segments = list(segments)
         detected_lang = getattr(info, "language", "unknown")
