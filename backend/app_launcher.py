@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import socket
 import subprocess
 import time
 import webbrowser
@@ -255,8 +256,10 @@ def _launch_start_apps(
     """
     Use PowerShell Get-StartApps to find and launch a Windows/UWP app.
 
-    explorer.exe shell:AppsFolder always exits 0 — we validate by watching
-    for a new window matching alias or focus_keywords to appear.
+    explorer.exe shell:AppsFolder always exits 0. Since we positively
+    identified the app via Get-StartApps, we consider the launch successful
+    if subprocess.Popen succeeds, even if window verification times out
+    (UWP apps often launch asynchronously or have delayed window creation).
     """
     try:
         pattern = f"*{alias}*"
@@ -283,12 +286,15 @@ def _launch_start_apps(
         # Build verification keywords
         verify_keywords = [alias] + list(focus_keywords)
 
-        # explorer.exe always exits 0 — must use window verification
-        return _launch_via_shell(
+        # We call _launch_via_shell to attempt focusing the window,
+        # but DO NOT strictly require it to return True.
+        # The UWP package exists and explorer.exe will launch it.
+        _launch_via_shell(
             ["explorer.exe", f"shell:AppsFolder\\{app_id}"],
             verify_keywords,
             timeout=5.0,
         )
+        return True
     except Exception:
         return False
 
@@ -314,6 +320,15 @@ def _has_windows_alias(config: LaunchConfig) -> bool:
 # ═══════════════════════════════════════════════════════════════
 # URL / Directory helpers
 # ═══════════════════════════════════════════════════════════════
+
+
+def _validate_domain(domain: str) -> bool:
+    """Validate if a domain exists via quick DNS resolution."""
+    try:
+        socket.gethostbyname(domain)
+        return True
+    except Exception:
+        return False
 
 
 def open_url(
@@ -903,8 +918,22 @@ def launch_app(app_name: str, extra_args: Sequence[str] | None = None) -> Launch
             used_fallback=True,
         )
 
-    # ── Stage 5: Google search as last resort ────────────────
-    search_url = f"https://www.google.com/search?q={quote_plus(cleaned + ' download')}"
+    # ── Stage 5: Intelligent Domain Inference ────────────────
+    no_spaces = cleaned.replace(" ", "")
+    if no_spaces:
+        for domain in [f"{no_spaces}.com", f"www.{no_spaces}.com"]:
+            if _validate_domain(domain):
+                web_url = f"https://{domain}"
+                if open_url(web_url, display, [cleaned, "chrome", "edge"]):
+                    return LaunchResult(
+                        True,
+                        f"[SUCCESS] {display} desktop app not found. "
+                        f"Inferred and opened {domain} instead.",
+                        used_fallback=True,
+                    )
+
+    # ── Stage 6: Google search as last resort ────────────────
+    search_url = f"https://www.google.com/search?q={quote_plus(cleaned + ' official website')}"
     if open_url(search_url, f"Search: {display}", ["chrome", "edge", "google"]):
         return LaunchResult(
             True,
