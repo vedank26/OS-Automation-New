@@ -13,4 +13,7 @@ pyautogui==0.9.54
 python-docx
 PyMuPDF
 openpyxl
-
+python-docx>=0.8.11
+PyMuPDF>=1.23.0
+openpyxl>=3.1.0
+python-multipart
