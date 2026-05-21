@@ -11,6 +11,7 @@ from assignment_solver import (
     solve_assignment,
     solve_assignment_from_description,
     solve_assignment_from_file_upload,
+    save_assignment_docx,
     get_solved_files,
 )
 
@@ -33,6 +34,11 @@ class Command(BaseModel):
 
 class AssignmentDescription(BaseModel):
     description: str
+
+
+class SaveDocxRequest(BaseModel):
+    solution_text: str
+    title: str
 
 
 @app.get("/")
@@ -79,17 +85,19 @@ async def listen_stop():
 
 
 # ─────────────────────────────────────────
-# 📝 ASSIGNMENT SOLVER ENDPOINTS
+# ASSIGNMENT SOLVER ENDPOINTS
 # ─────────────────────────────────────────
 
 @app.post("/solve-assignment/file")
-async def solve_assignment_file(file: UploadFile = File(...)):
+async def solve_assignment_file(
+    file: UploadFile = File(...),
+    instructions: str = Form(""),
+):
     """
     Upload an assignment file and get it solved.
-    Accepts: .txt, .pdf, .docx, .xlsx, .csv, .py, .js, .html, etc.
-    Returns: solved .docx file info.
+    Optionally provide instructions on how it should be done.
+    Returns: solution text for preview (NOT saved yet).
     """
-    # Save the uploaded file to a temp location
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     safe_name = f"{timestamp}_{file.filename}"
     temp_path = os.path.join(UPLOAD_DIR, safe_name)
@@ -100,11 +108,13 @@ async def solve_assignment_file(file: UploadFile = File(...)):
             f.write(content)
 
         print(f"[Assignment API] File uploaded: {safe_name} ({len(content)} bytes)")
+        if instructions:
+            print(f"[Assignment API] Instructions: {instructions[:100]}...")
 
         # Solve the assignment in a thread to not block
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
-            None, solve_assignment_from_file_upload, temp_path
+            None, solve_assignment_from_file_upload, temp_path, instructions
         )
 
         return {"result": result, "status": "success"}
@@ -113,7 +123,6 @@ async def solve_assignment_file(file: UploadFile = File(...)):
         return {"result": f"Error processing file: {e}", "status": "error"}
 
     finally:
-        # Clean up the temp file
         try:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -125,7 +134,7 @@ async def solve_assignment_file(file: UploadFile = File(...)):
 async def solve_assignment_description(data: AssignmentDescription):
     """
     Describe your assignment in text and get it solved.
-    Returns: solved .docx file info.
+    Returns: solution text for preview (NOT saved yet).
     """
     if not data.description or not data.description.strip():
         return {
@@ -147,13 +156,41 @@ async def solve_assignment_description(data: AssignmentDescription):
         return {"result": f"Error solving assignment: {e}", "status": "error"}
 
 
+@app.post("/solve-assignment/save-docx")
+async def save_assignment_docx_endpoint(data: SaveDocxRequest):
+    """
+    Save a solution text as a .docx file on the Desktop.
+    Called after the user has previewed and optionally edited the solution.
+    """
+    if not data.solution_text or not data.solution_text.strip():
+        return {
+            "result": "No solution text provided to save.",
+            "status": "error",
+        }
+
+    if not data.title or not data.title.strip():
+        data.title = "Assignment"
+
+    print(f"[Assignment API] Save docx: title='{data.title}' ({len(data.solution_text)} chars)")
+
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, save_assignment_docx, data.solution_text.strip(), data.title.strip()
+        )
+
+        return {"result": result, "status": "success"}
+
+    except Exception as e:
+        return {"result": f"Error saving document: {e}", "status": "error"}
+
+
 @app.get("/solve-assignment/history")
 async def assignment_history():
     """
     Returns a list of recently solved assignment files.
     """
     try:
-        from assignment_solver import get_solved_files
         files = get_solved_files()
         return {"files": files, "status": "success"}
     except Exception as e:

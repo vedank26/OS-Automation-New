@@ -123,10 +123,11 @@ class ApiService {
   }
 
   // ─────────────────────────────────────────
-  // 📝 ASSIGNMENT SOLVER API CALLS
+  // ASSIGNMENT SOLVER API CALLS
   // ─────────────────────────────────────────
 
   /// Solve an assignment from a text description
+  /// Returns the solution text for preview (not saved yet)
   static Future<Map<String, dynamic>> solveAssignmentDescription(
       String description) async {
     try {
@@ -152,16 +153,16 @@ class ApiService {
     }
   }
 
-  /// Solve an assignment by uploading a file
+  /// Solve an assignment by uploading a file (with optional instructions)
+  /// Returns the solution text for preview (not saved yet)
   static Future<Map<String, dynamic>> solveAssignmentFile(
-      String filePath) async {
+      String filePath, {String? instructions}) async {
     try {
       final file = File(filePath);
       if (!await file.exists()) {
         return {"result": "File not found: $filePath", "status": "error"};
       }
 
-      final fileName = filePath.split(Platform.pathSeparator).last;
       final request = http.MultipartRequest(
         'POST',
         Uri.parse("$baseUrl/solve-assignment/file"),
@@ -170,6 +171,11 @@ class ApiService {
       request.files.add(
         await http.MultipartFile.fromPath('file', filePath),
       );
+
+      // Add instructions as a form field if provided
+      if (instructions != null && instructions.trim().isNotEmpty) {
+        request.fields['instructions'] = instructions.trim();
+      }
 
       final streamedResponse =
           await request.send().timeout(const Duration(seconds: 300));
@@ -184,6 +190,35 @@ class ApiService {
       };
     } on TimeoutException {
       return {"result": "Request timed out. The AI is still working.", "status": "timeout"};
+    } catch (e) {
+      return {"result": "Error: ${e.toString()}", "status": "error"};
+    }
+  }
+
+  /// Save the (possibly edited) solution text as a .docx file on Desktop
+  static Future<Map<String, dynamic>> saveAssignmentDocx({
+    required String solutionText,
+    required String title,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse("$baseUrl/solve-assignment/save-docx"),
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({
+              "solution_text": solutionText,
+              "title": title,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      return {
+        "result": "Server error: ${response.statusCode}",
+        "status": "error",
+      };
     } catch (e) {
       return {"result": "Error: ${e.toString()}", "status": "error"};
     }

@@ -2,23 +2,18 @@ import os
 import re
 import json
 import time
+import base64
+import tempfile
+import requests
 from groq import Groq
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 # ─────────────────────────────────────────
 # Groq client (reuses existing env key)
 # ─────────────────────────────────────────
-_api_key = os.getenv("GROQ_API_KEY")
-_client = Groq(api_key=_api_key) if _api_key else None
-
-
-def _ensure_ai_client() -> None:
-    if not _client:
-        raise RuntimeError(
-            "Groq API key is missing. Please set GROQ_API_KEY in .env or your environment."
-        )
+_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # ─────────────────────────────────────────
 # Command trigger phrases — expanded
@@ -74,16 +69,12 @@ def _detect_subject(text: str) -> str:
 
 # ─────────────────────────────────────────
 # Platform-independent path helpers
-# (Replaces Windows-only winreg approach)
 # ─────────────────────────────────────────
 
 def _get_real_desktop() -> str:
     """
     Gets the Desktop path cross-platform.
-    On Windows: tries Registry first, then falls back.
-    On Linux/Mac: uses ~/Desktop.
     """
-    # Try Windows Registry first
     try:
         import winreg
         key = winreg.OpenKey(
@@ -97,7 +88,6 @@ def _get_real_desktop() -> str:
     except (ImportError, Exception):
         pass
 
-    # Cross-platform fallback
     home = os.path.expanduser("~")
     candidates = [
         os.path.join(home, "OneDrive", "Desktop"),
@@ -107,15 +97,11 @@ def _get_real_desktop() -> str:
     for path in candidates:
         if os.path.isdir(path):
             return path
-
-    return home  # last resort
+    return home
 
 
 def _get_search_roots() -> list[str]:
-    """
-    Returns all meaningful locations to search for a file.
-    Cross-platform: works on Windows, Linux, and Mac.
-    """
+    """Returns all meaningful locations to search for a file."""
     home = os.path.expanduser("~")
     roots = []
 
@@ -130,7 +116,6 @@ def _get_search_roots() -> list[str]:
         if os.path.isdir(d) and d not in roots:
             roots.append(d)
 
-    # On Windows, add all drive roots
     try:
         import string
         for letter in string.ascii_uppercase:
@@ -140,7 +125,6 @@ def _get_search_roots() -> list[str]:
     except Exception:
         pass
 
-    # On Linux/Mac, add common mount points
     for mount in ["/mnt", "/media", "/Volumes"]:
         if os.path.isdir(mount):
             try:
@@ -165,24 +149,17 @@ def is_assignment_command(command: str) -> bool:
 
 
 def is_description_only_command(command: str) -> bool:
-    """
-    Returns True if the assignment command contains a description
-    (not just a filename). Heuristic: if the remaining text after
-    the trigger is longer than a typical filename and contains
-    common sentence words, it's a description.
-    """
+    """Returns True if the command contains a description (not just a filename)."""
     description = _extract_description_or_filename(command)
     if description is None:
         return False
 
-    # If it looks like a filename (has extension, no spaces or short)
     has_extension = bool(re.search(r'\.\w{1,5}$', description.strip()))
     word_count = len(description.split())
 
     if has_extension and word_count <= 3:
         return False
 
-    # If it's long or contains sentence-like words, it's a description
     sentence_indicators = [
         "about", "on", "regarding", "for", "topic", "question",
         "chapter", "unit", "subject", "write", "explain", "describe",
@@ -205,7 +182,6 @@ def _extract_description_or_filename(command: str) -> str | None:
         if trigger in cmd.lower():
             idx = cmd.lower().find(trigger)
             remainder = cmd[idx + len(trigger):].strip()
-            # Strip filler words
             filler = r"^(called|named|file|for|my|the|:)\s+"
             remainder = re.sub(filler, "", remainder, flags=re.IGNORECASE).strip()
             return remainder if remainder else None
@@ -214,27 +190,17 @@ def _extract_description_or_filename(command: str) -> str | None:
 
 
 def parse_filename(command: str) -> str | None:
-    """
-    Extract the filename from the command.
-    Only returns a filename if the input looks like a file reference.
-
-    Examples:
-      "complete assignment homework.txt"        -> "homework.txt"
-      "do my assignment called math_task.pdf"   -> "math_task.pdf"
-      "solve assignment file notes.docx"        -> "notes.docx"
-    """
+    """Extract the filename from the command."""
     remainder = _extract_description_or_filename(command)
     if remainder is None:
         return None
 
-    # Check if it looks like a filename
     has_extension = bool(re.search(r'\.\w{1,5}$', remainder.strip()))
     word_count = len(remainder.split())
 
     if has_extension and word_count <= 3:
         return remainder.strip()
 
-    # Could be a filename without extension (short, no sentence words)
     if word_count <= 3 and not any(
         w in remainder.lower()
         for w in ["about", "on", "regarding", "write", "explain", "describe", "discuss", "topic", "question"]
@@ -245,16 +211,7 @@ def parse_filename(command: str) -> str | None:
 
 
 def parse_description(command: str) -> str | None:
-    """
-    Extract the assignment description from the command.
-    Returns None if the command references a file instead.
-
-    Examples:
-      "solve my assignment about thermodynamics laws and their applications"
-        -> "thermodynamics laws and their applications"
-      "complete assignment write an essay on climate change"
-        -> "write an essay on climate change"
-    """
+    """Extract the assignment description from the command."""
     if not is_description_only_command(command):
         return None
 
@@ -262,21 +219,17 @@ def parse_description(command: str) -> str | None:
     if remainder is None:
         return None
 
-    # Strip filler words more aggressively for descriptions
     filler = r"^(called|named|file|for|my|the|:|about|on|regarding)\s+"
     cleaned = re.sub(filler, "", remainder, flags=re.IGNORECASE).strip()
     return cleaned if cleaned else remainder.strip()
 
 
 # ─────────────────────────────────────────
-# File finder — searches Desktop + common dirs
+# File finder
 # ─────────────────────────────────────────
 
 def _find_file(filename: str) -> str | None:
-    """
-    Searches for `filename` across common user directories.
-    Returns the full path of the first match, or None.
-    """
+    """Searches for `filename` across common user directories."""
     lower_fn = filename.lower()
     base_fn = os.path.splitext(lower_fn)[0]
     has_ext = bool(os.path.splitext(lower_fn)[1])
@@ -325,18 +278,19 @@ def _find_file(filename: str) -> str | None:
 
 
 # ─────────────────────────────────────────
-# File reader — supports multiple formats
+# File reader — supports multiple formats + images
 # ─────────────────────────────────────────
 
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tiff", ".tif"}
+
+
+def _is_image_file(filepath: str) -> bool:
+    """Return True if the file is an image based on extension."""
+    return os.path.splitext(filepath)[1].lower() in IMAGE_EXTENSIONS
+
+
 def _read_file(filepath: str) -> str:
-    """
-    Read content from a file. Supports:
-      - Plain text: .txt .md .py .js .ts .html .css .json .csv .xml
-      - Word docs:  .docx  (python-docx)
-      - PDFs:       .pdf   (PyMuPDF)
-      - Excel:      .xlsx  (openpyxl)
-      - Images:     .png .jpg .jpeg .bmp .tiff (OCR via pytesseract, optional)
-    """
+    """Read content from a file. Supports multiple formats including images."""
     ext = os.path.splitext(filepath)[1].lower()
 
     plain_text_exts = {
@@ -385,32 +339,174 @@ def _read_file(filepath: str) -> str:
         except ImportError:
             raise RuntimeError("Run: pip install openpyxl")
 
-    # Image OCR (optional dependency)
-    if ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif"):
-        try:
-            import pytesseract
-            from PIL import Image
-            img = Image.open(filepath)
-            text = pytesseract.image_to_string(img)
-            return text
-        except ImportError:
-            raise RuntimeError(
-                "Image OCR requires: pip install pytesseract Pillow "
-                "(and Tesseract-OCR must be installed on the system)"
-            )
+    # ── Images — Groq Vision model ────────────────────────────────────────
+    if ext in IMAGE_EXTENSIONS:
+        return _read_image(filepath)
 
     raise RuntimeError(
         f"Unsupported file type '{ext}'. "
         "Supported: .txt .md .py .js .html .pdf .docx .xlsx .csv .json "
-        ".png .jpg .jpeg (with OCR)"
+        ".png .jpg .jpeg .bmp .webp"
     )
+
+
+# ─────────────────────────────────────────
+# Image reader — uses Groq Vision model
+# ─────────────────────────────────────────
+
+def _read_image(filepath: str) -> str:
+    """
+    Read an assignment image using Groq's vision model.
+    Encodes the image as base64 and sends it to the vision-capable LLM,
+    which extracts all text, questions, and content from the image.
+    """
+    ext = os.path.splitext(filepath)[1].lower()
+    mime_map = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".bmp": "image/bmp",
+        ".webp": "image/webp",
+        ".tiff": "image/tiff",
+        ".tif": "image/tiff",
+    }
+    mime_type = mime_map.get(ext, "image/jpeg")
+
+    with open(filepath, "rb") as f:
+        image_data = base64.b64encode(f.read()).decode("utf-8")
+
+    data_url = f"data:{mime_type};base64,{image_data}"
+
+    print(f"[Assignment Solver] Reading image with Groq Vision: {os.path.basename(filepath)}")
+
+    response = _client.chat.completions.create(
+        model="meta-llama/llama-4-scout-17b-16e-instruct",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a precise document reader. "
+                    "The user will provide an image of an assignment, handwritten notes, or printed document. "
+                    "Your job is to extract ALL text, questions, formulas, diagrams descriptions, and content from the image. "
+                    "Reproduce the content exactly as written — do not solve or answer anything. "
+                    "If the image contains handwritten text, transcribe it as accurately as possible. "
+                    "If there are numbered questions, preserve the numbering. "
+                    "If there are formulas, write them in a readable text format. "
+                    "If something is unclear, make your best attempt and note it in brackets like [unclear]."
+                ),
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Please read and extract all the content from this assignment image. "
+                            "Include every question, instruction, and piece of text you can see. "
+                            "Preserve numbering and formatting as closely as possible."
+                        ),
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": data_url},
+                    },
+                ],
+            },
+        ],
+        temperature=0.2,
+        max_tokens=4000,
+    )
+
+    extracted = response.choices[0].message.content.strip()
+    if not extracted:
+        raise RuntimeError("Could not extract any text from the image. The image may be unclear or empty.")
+
+    print(f"[Assignment Solver] Extracted {len(extracted)} characters from image")
+    return extracted
+
+
+# ─────────────────────────────────────────
+# Image generator — Pollinations.ai (FREE)
+# ─────────────────────────────────────────
+
+def _generate_image(prompt: str, index: int) -> str | None:
+    """
+    Generate an image using Pollinations.ai (completely free, no API key).
+    Returns the path to the saved image file, or None on failure.
+
+    Pollinations.ai works via a simple GET request:
+      https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024
+    """
+    try:
+        clean_prompt = prompt.strip()
+        full_prompt = f"{clean_prompt}, educational diagram, clean style, labeled, professional, high quality"
+
+        # Use a unique seed based on index + time for reproducibility
+        import hashlib
+        seed = int(hashlib.md5(clean_prompt.encode()).hexdigest()[:8], 16)
+        url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(full_prompt)}?width=1024&height=1024&nologo=true&seed={seed}"
+
+        print(f"[Assignment Solver] Generating image {index}: {clean_prompt[:80]}...")
+        print(f"[Assignment Solver]   URL: {url[:120]}...")
+
+        response = requests.get(url, timeout=90)
+        if response.status_code != 200:
+            print(f"   Warning: Image generation returned status {response.status_code}")
+            return None
+
+        # Check we got actual image data (not an error page)
+        content_type = response.headers.get("content-type", "")
+        content_len = len(response.content)
+        print(f"[Assignment Solver]   Response: status={response.status_code}, content-type={content_type}, size={content_len}")
+
+        # If content is too small, it's likely an error
+        if content_len < 500:
+            print(f"   Warning: Response too small ({content_len} bytes), likely not an image")
+            # Print first 200 chars to help debug
+            try:
+                print(f"   Response body preview: {response.text[:200]}")
+            except Exception:
+                pass
+            return None
+
+        # Save to temp file
+        temp_dir = tempfile.gettempdir()
+        img_path = os.path.join(temp_dir, f"assignment_diagram_{index}_{os.getpid()}.png")
+
+        with open(img_path, "wb") as f:
+            f.write(response.content)
+
+        file_size = os.path.getsize(img_path)
+        if file_size < 2000:
+            print(f"   Warning: Generated image too small ({file_size} bytes), likely an error")
+            os.remove(img_path)
+            return None
+
+        print(f"   Image saved: {file_size:,} bytes")
+        return img_path
+
+    except requests.Timeout:
+        print(f"   Warning: Image generation timed out")
+        return None
+    except Exception as e:
+        print(f"   Warning: Image generation failed: {e}")
+        return None
+
+
+def _extract_diagram_markers(text: str) -> list[str]:
+    """
+    Extract all [DIAGRAM: description] markers from the text.
+    Returns a list of description strings.
+    """
+    pattern = r'\[DIAGRAM:\s*(.+?)\]'
+    return re.findall(pattern, text)
 
 
 # ─────────────────────────────────────────
 # AI solver — multi-pass for quality
 # ─────────────────────────────────────────
 
-def _build_system_prompt(subject: str, source_type: str) -> str:
+def _build_system_prompt(subject: str, source_type: str, instructions: str = "") -> str:
     """Build a subject-specific, source-aware system prompt."""
 
     subject_instructions = {
@@ -421,7 +517,6 @@ def _build_system_prompt(subject: str, source_type: str) -> str:
             "- State all formulas BEFORE using them.\n"
             "- Double-check every calculation.\n"
             "- Box or highlight final answers.\n"
-            "- If a diagram/figure is described, describe it textually.\n"
             "- Use proper mathematical notation.\n"
         ),
         "physics": (
@@ -431,7 +526,8 @@ def _build_system_prompt(subject: str, source_type: str) -> str:
             "- Show complete step-by-step derivation.\n"
             "- Include units at every step.\n"
             "- Verify the answer with dimensional analysis.\n"
-            "- Draw diagrams mentally and describe them.\n"
+            "- When a force diagram, circuit diagram, ray diagram, or similar visual would help, "
+            "insert a [DIAGRAM: ...] marker.\n"
         ),
         "chemistry": (
             "You are solving a CHEMISTRY assignment. Follow these rules strictly:\n"
@@ -448,6 +544,8 @@ def _build_system_prompt(subject: str, source_type: str) -> str:
             "- Include relevant examples.\n"
             "- Describe structures and functions clearly.\n"
             "- Reference classifications and taxonomies where applicable.\n"
+            "- When a diagram of a cell, organ, process flow, or similar visual would help, "
+            "insert a [DIAGRAM: ...] marker.\n"
         ),
         "computer_science": (
             "You are solving a COMPUTER SCIENCE assignment. Follow these rules strictly:\n"
@@ -457,6 +555,8 @@ def _build_system_prompt(subject: str, source_type: str) -> str:
             "- For theory: provide precise, well-structured answers.\n"
             "- For algorithms: trace through with an example input.\n"
             "- For database: show proper SQL with expected output.\n"
+            "- When a flowchart, tree diagram, architecture diagram, or similar visual would help, "
+            "insert a [DIAGRAM: ...] marker.\n"
         ),
         "english": (
             "You are solving an ENGLISH assignment. Follow these rules strictly:\n"
@@ -481,14 +581,17 @@ def _build_system_prompt(subject: str, source_type: str) -> str:
             "- Use proper graphs/charts descriptions where applicable.\n"
             "- Cite real-world examples.\n"
             "- Distinguish between micro and macro concepts.\n"
+            "- When a supply-demand graph, economic model diagram, or similar visual would help, "
+            "insert a [DIAGRAM: ...] marker.\n"
         ),
         "engineering": (
             "You are solving an ENGINEERING assignment. Follow these rules strictly:\n"
             "- Show all derivations step by step.\n"
             "- Include proper units and dimensions.\n"
-            "- Draw circuit/block diagrams described textually.\n"
             "- Verify answers using alternative methods where possible.\n"
             "- State all assumptions clearly.\n"
+            "- When a circuit diagram, block diagram, signal flow graph, or similar visual would help, "
+            "insert a [DIAGRAM: ...] marker.\n"
         ),
         "general": (
             "You are solving an academic assignment. Follow these rules:\n"
@@ -524,6 +627,46 @@ def _build_system_prompt(subject: str, source_type: str) -> str:
             "Create appropriate headings and structure based on the description.\n"
         )
 
+    # User instructions (how the assignment should be done)
+    instructions_section = ""
+    if instructions and instructions.strip():
+        instructions_section = (
+            "\nUSER INSTRUCTIONS FOR THIS ASSIGNMENT:\n"
+            f"{'='*60}\n"
+            f"{instructions.strip()}\n"
+            f"{'='*60}\n"
+            "Follow these user instructions carefully while solving the assignment.\n"
+        )
+
+    # ── Diagram marker instructions — VERY PROMINENT ─────────────────────
+    diagram_instruction = (
+        "\n" + "="*60 + "\n"
+        "*** MANDATORY: DIAGRAM MARKERS ***\n"
+        "="*60 + "\n"
+        "You MUST include [DIAGRAM: ...] markers in your solution whenever a visual would help.\n"
+        "This is NOT optional — diagrams are a critical part of the output.\n\n"
+        "Format (on its OWN LINE):\n"
+        "  [DIAGRAM: detailed description of what the image should show]\n\n"
+        "Examples:\n"
+        "  [DIAGRAM: Free body diagram showing forces on a block on an inclined plane with friction]\n"
+        "  [DIAGRAM: Flowchart of the water cycle with evaporation, condensation, and precipitation]\n"
+        "  [DIAGRAM: Circuit diagram of a full-wave bridge rectifier with labeled components]\n"
+        "  [DIAGRAM: Venn diagram comparing mitosis and meiosis]\n"
+        "  [DIAGRAM: Supply and demand curve showing equilibrium price and quantity]\n"
+        "  [DIAGRAM: Structure of an animal cell with labeled organelles]\n"
+        "  [DIAGRAM: Block diagram of a microprocessor with ALU, CU, registers]\n\n"
+        "RULES:\n"
+        "- You MUST include at least 1 [DIAGRAM: ...] marker for subjects like Physics, Engineering, "
+        "Biology, Economics, Computer Science where visuals are standard.\n"
+        "- For ANY subject, if you describe something visual (graph, chart, circuit, structure, process), "
+        "add a [DIAGRAM: ...] marker instead of just describing it in text.\n"
+        "- Place the marker on its OWN LINE, right after the relevant explanation.\n"
+        "- The description must be DETAILED and SPECIFIC so an image can be generated from it.\n"
+        "- Do NOT just say 'see diagram above' or 'as shown in figure' — use the [DIAGRAM: ...] marker.\n"
+        "- Even for Math: geometry problems, coordinate graphs, function plots — add a marker.\n"
+        "="*60 + "\n"
+    )
+
     format_instruction = (
         "\nFORMATTING RULES:\n"
         "- Use markdown-style headings: # for main headings, ## for sub-headings\n"
@@ -532,18 +675,28 @@ def _build_system_prompt(subject: str, source_type: str) -> str:
         "- Separate sections with blank lines\n"
         "- For code blocks, use triple backticks with the language name\n"
         "- For math, use clear notation (e.g., x^2 for x squared)\n"
-        "- Include a brief introduction and conclusion where appropriate\n"
+        "- Do NOT add any meta-information like 'Completed Assignment', 'Source:', timestamps, "
+        "or any introductory/concluding remarks about the solving process.\n"
+        "- Start directly with the assignment content/solution.\n"
     )
 
-    return base + subject_specific + source_instruction + format_instruction
+    return base + subject_specific + source_instruction + instructions_section + diagram_instruction + format_instruction
 
 
-def _ask_ai(assignment_content: str, filename_or_description: str, subject: str, source_type: str = "file") -> str:
+def _ask_ai(assignment_content: str, filename_or_description: str, subject: str,
+            source_type: str = "file", instructions: str = "") -> str:
     """
     Send assignment content to Groq and return the completed answer.
     Uses a two-pass approach: first generate, then verify/improve.
     """
-    system_prompt = _build_system_prompt(subject, source_type)
+    system_prompt = _build_system_prompt(subject, source_type, instructions)
+
+    # ── Diagram reminder for user prompt ──────────────────────────────
+    diagram_reminder = (
+        "\n\nIMPORTANT REMINDER: Include [DIAGRAM: ...] markers wherever a diagram, "
+        "graph, chart, circuit, flowchart, or any visual illustration would help. "
+        "Do NOT skip this — these markers are used to auto-generate images in the document."
+    )
 
     # ── Pass 1: Generate the solution ──────────────────────────────
     if source_type == "file":
@@ -555,6 +708,7 @@ def _ask_ai(assignment_content: str, filename_or_description: str, subject: str,
             "Please complete this assignment fully and correctly. "
             "Answer EVERY question and complete EVERY task.\n"
             "Detected subject area: " + subject
+            + diagram_reminder
         )
     else:
         user_prompt = (
@@ -565,11 +719,10 @@ def _ask_ai(assignment_content: str, filename_or_description: str, subject: str,
             "Please create a complete, well-structured solution for this assignment. "
             "Include all necessary explanations, calculations, and details.\n"
             "Detected subject area: " + subject
+            + diagram_reminder
         )
 
     print(f"[Assignment Solver] Pass 1: Generating solution (subject: {subject})...")
-
-    _ensure_ai_client()
 
     try:
         response = _client.chat.completions.create(
@@ -578,12 +731,19 @@ def _ask_ai(assignment_content: str, filename_or_description: str, subject: str,
                 {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": user_prompt},
             ],
-            temperature=0.3,
+            temperature=0.5,
             max_tokens=8000,
         )
         first_pass = response.choices[0].message.content.strip()
     except Exception as e:
         raise RuntimeError(f"AI generation failed: {e}")
+
+    # ── Debug: Check if Pass 1 produced any diagram markers ──────────
+    pass1_markers = _extract_diagram_markers(first_pass)
+    print(f"[Assignment Solver] Pass 1 found {len(pass1_markers)} diagram marker(s)")
+    if pass1_markers:
+        for idx, m in enumerate(pass1_markers):
+            print(f"   Marker {idx+1}: {m[:80]}")
 
     # ── Pass 2: Review and improve ─────────────────────────────────
     review_prompt = (
@@ -604,7 +764,14 @@ def _ask_ai(assignment_content: str, filename_or_description: str, subject: str,
         "4. Improve clarity and formatting if needed.\n"
         "5. Add any missing explanations or details.\n"
         "6. Output the COMPLETE, IMPROVED solution (not just the corrections).\n"
-        "7. Maintain the same heading structure but improve content quality.\n\n"
+        "7. Maintain the same heading structure but improve content quality.\n"
+        "8. Do NOT add meta-information like 'Completed Assignment', 'Source:', timestamps, "
+        "or introductory/concluding remarks about the solving process.\n"
+        "9. Start directly with the assignment content/solution.\n"
+        "10. PRESERVE any [DIAGRAM: ...] markers from the original solution — do not remove them.\n"
+        "11. If the original solution has NO [DIAGRAM: ...] markers but should have them (for Physics, "
+        "Engineering, Biology, Economics, CS subjects), ADD appropriate [DIAGRAM: ...] markers now.\n"
+        "12. EVERY visual concept (graph, circuit, flowchart, structure, process) MUST have a [DIAGRAM: ...] marker.\n\n"
         "Output only the final, polished solution document."
     )
 
@@ -614,10 +781,17 @@ def _ask_ai(assignment_content: str, filename_or_description: str, subject: str,
         review_response = _client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "You are a thorough academic reviewer and improver. Output only the final improved solution."},
+                {"role": "system", "content": (
+                    "You are a thorough academic reviewer and improver. "
+                    "Output only the final improved solution. "
+                    "Do NOT add meta-information about the solving process. "
+                    "CRITICAL: PRESERVE all [DIAGRAM: ...] markers. "
+                    "If any are missing for visual concepts, ADD them. "
+                    "Every diagram/graph/circuit/flowchart/structure MUST have a [DIAGRAM: ...] marker."
+                )},
                 {"role": "user",   "content": review_prompt},
             ],
-            temperature=0.2,
+            temperature=0.3,
             max_tokens=8000,
         )
         final_solution = review_response.choices[0].message.content.strip()
@@ -625,35 +799,73 @@ def _ask_ai(assignment_content: str, filename_or_description: str, subject: str,
         print(f"[Assignment Solver] Review pass failed, using first pass: {e}")
         final_solution = first_pass
 
+    # ── Debug: Check final markers ──────────────────────────────────
+    final_markers = _extract_diagram_markers(final_solution)
+    print(f"[Assignment Solver] Final solution has {len(final_markers)} diagram marker(s)")
+    if final_markers:
+        for idx, m in enumerate(final_markers):
+            print(f"   Final Marker {idx+1}: {m[:80]}")
+    elif not final_markers and subject in ("physics", "engineering", "biology", "economics", "computer_science", "mathematics"):
+        # ── Pass 3: Force-add diagrams if none were generated ──────────
+        print(f"[Assignment Solver] No diagrams found for {subject} — forcing diagram generation pass...")
+        try:
+            diagram_prompt = (
+                "You are an expert at creating educational diagrams. "
+                "Given the following assignment solution, identify places where a diagram, graph, chart, "
+                "circuit, flowchart, or visual illustration would enhance understanding.\n\n"
+                "SOLUTION:\n"
+                f"{'='*60}\n"
+                f"{final_solution}\n"
+                f"{'='*60}\n\n"
+                "Subject: " + subject + "\n\n"
+                "Insert [DIAGRAM: detailed description] markers on their own lines "
+                "at appropriate locations in the solution. "
+                "For " + subject + ", you should add at least 1-2 diagrams. "
+                "Output the COMPLETE solution with the [DIAGRAM: ...] markers added. "
+                "Do NOT change any other content.\n\n"
+                "Examples of good markers:\n"
+                "  [DIAGRAM: Free body diagram showing forces on a block on an inclined plane with friction]\n"
+                "  [DIAGRAM: Flowchart of the water cycle with evaporation, condensation, and precipitation]\n"
+                "  [DIAGRAM: Circuit diagram of a full-wave bridge rectifier with labeled components]\n"
+            )
+            diagram_response = _client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "You add [DIAGRAM: ...] markers to assignment solutions. Output the full solution with markers added. Do NOT remove or change existing content."},
+                    {"role": "user",   "content": diagram_prompt},
+                ],
+                temperature=0.4,
+                max_tokens=8000,
+            )
+            forced_solution = diagram_response.choices[0].message.content.strip()
+            forced_markers = _extract_diagram_markers(forced_solution)
+            if forced_markers:
+                print(f"[Assignment Solver] Pass 3 added {len(forced_markers)} diagram marker(s)")
+                final_solution = forced_solution
+            else:
+                print(f"[Assignment Solver] Pass 3 also failed to generate markers")
+        except Exception as e:
+            print(f"[Assignment Solver] Diagram force pass failed: {e}")
+
     return final_solution
 
 
 # ─────────────────────────────────────────
-# Docx builder — professional formatting
+# Docx builder — clean formatting + images
 # ─────────────────────────────────────────
 
 def _save_result(source_path_or_dir: str, title: str, result: str, source_type: str = "file") -> str:
     """
     Save completed assignment as a formatted .docx Word document.
-
-    Args:
-        source_path_or_dir: Directory to save the file in (for file mode)
-                           or fallback directory (for description mode)
-        title: Title for the document
-        result: The AI-generated solution text
-        source_type: "file" or "description"
-
-    Returns:
-        The full path to the saved .docx file
+    - Generates and embeds images for any [DIAGRAM: ...] markers
+    - NO extra titles, headers, source info, or timestamps
     """
     import docx
-    from docx.shared import Pt, RGBColor, Inches
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt, RGBColor
 
     # Generate a clean, specific filename
     safe_title = re.sub(r'[^\w\s-]', '', title).strip()
     safe_title = re.sub(r'[\s]+', '_', safe_title)
-    # Truncate if too long
     if len(safe_title) > 60:
         safe_title = safe_title[:60]
     timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -669,42 +881,31 @@ def _save_result(source_path_or_dir: str, title: str, result: str, source_type: 
 
     out_path = os.path.join(source_dir, out_name)
 
+    # ── Pre-generate all images from [DIAGRAM: ...] markers ────────────
+    diagram_descriptions = _extract_diagram_markers(result)
+    generated_images: dict[int, str] = {}  # index → image file path
+
+    if diagram_descriptions:
+        print(f"[Assignment Solver] Found {len(diagram_descriptions)} diagram marker(s), generating images...")
+    else:
+        print(f"[Assignment Solver] No [DIAGRAM: ...] markers found in solution — no images to generate")
+
+    for idx, desc in enumerate(diagram_descriptions):
+        img_path = _generate_image(desc, idx + 1)
+        if img_path:
+            generated_images[idx] = img_path
+
     def _build_doc() -> docx.Document:
         doc = docx.Document()
 
-        # ── Set default font ───────────────────────────────────────────────
+        # Set default font
         style = doc.styles['Normal']
         font = style.font
         font.name = 'Calibri'
         font.size = Pt(11)
 
-        # ── Title ──────────────────────────────────────────────────────────
-        title_para = doc.add_heading(f"Completed Assignment", level=0)
-        title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        for run in title_para.runs:
-            run.font.color.rgb = RGBColor(0x1F, 0x49, 0x7D)
-
-        # ── Subtitle with source info ──────────────────────────────────────
-        sub = doc.add_paragraph(f"Source: {title}")
-        sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        for run in sub.runs:
-            run.font.size = Pt(10)
-            run.font.italic = True
-            run.font.color.rgb = RGBColor(0x70, 0x70, 0x70)
-
-        # ── Date/time stamp ────────────────────────────────────────────────
-        date_para = doc.add_paragraph(f"Solved: {time.strftime('%B %d, %Y at %I:%M %p')}")
-        date_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        for run in date_para.runs:
-            run.font.size = Pt(9)
-            run.font.italic = True
-            run.font.color.rgb = RGBColor(0x90, 0x90, 0x90)
-
-        # ── Horizontal rule ────────────────────────────────────────────────
-        doc.add_paragraph("─" * 60)
-
-        # ── Parse and render the solution ──────────────────────────────────
-        _render_markdown_to_docx(doc, result)
+        # Render the content — pass generated_images for embedding
+        _render_markdown_to_docx(doc, result, generated_images)
 
         return doc
 
@@ -721,39 +922,107 @@ def _save_result(source_path_or_dir: str, title: str, result: str, source_type: 
         except Exception:
             pass
 
+    # ── Clean up temp image files ────────────────────────────────────
+    for img_path in generated_images.values():
+        try:
+            os.remove(img_path)
+        except Exception:
+            pass
+
     print(f"[Assignment Solver] Saved: {out_path}")
     return out_path
 
 
-def _render_markdown_to_docx(doc, text: str):
+def save_docx_from_text(solution_text: str, title: str) -> str:
+    """
+    Save an already-generated solution text as a .docx file.
+    Used by the preview/save endpoint — takes the (possibly edited) text
+    and writes it directly to a docx on Desktop without any AI processing.
+    Handles [DIAGRAM: ...] markers by generating and embedding images.
+    """
+    import docx
+    from docx.shared import Pt
+
+    safe_title = re.sub(r'[^\w\s-]', '', title).strip()
+    safe_title = re.sub(r'[\s]+', '_', safe_title)
+    if len(safe_title) > 60:
+        safe_title = safe_title[:60]
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    out_name = f"{safe_title}_Solved_{timestamp}.docx"
+
+    desktop = _get_real_desktop()
+    out_path = os.path.join(desktop, out_name)
+
+    # ── Pre-generate all images from [DIAGRAM: ...] markers ────────────
+    diagram_descriptions = _extract_diagram_markers(solution_text)
+    generated_images: dict[int, str] = {}
+
+    if diagram_descriptions:
+        print(f"[Assignment Solver] Found {len(diagram_descriptions)} diagram marker(s) in preview text, generating images...")
+    else:
+        print(f"[Assignment Solver] No [DIAGRAM: ...] markers found in preview text — no images to generate")
+
+    for idx, desc in enumerate(diagram_descriptions):
+        img_path = _generate_image(desc, idx + 1)
+        if img_path:
+            generated_images[idx] = img_path
+
+    doc = docx.Document()
+
+    # Set default font
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = 'Calibri'
+    font.size = Pt(11)
+
+    # Render the content with images
+    _render_markdown_to_docx(doc, solution_text, generated_images)
+
+    doc.save(out_path)
+
+    # ── Clean up temp image files ────────────────────────────────────
+    for img_path in generated_images.values():
+        try:
+            os.remove(img_path)
+        except Exception:
+            pass
+
+    print(f"[Assignment Solver] Saved from preview: {out_path}")
+    return out_path
+
+
+def _render_markdown_to_docx(doc, text: str, generated_images: dict | None = None):
     """
     Render markdown-like text into a python-docx Document with proper formatting.
-    Handles: headings, bold, code blocks, numbered lists, bullet points, tables.
+    Handles: headings, bold, code blocks, numbered lists, bullet points,
+    and [DIAGRAM: ...] markers (generates and embeds images).
     """
     import docx as dx
-    from docx.shared import Pt, RGBColor
+    from docx.shared import Pt, RGBColor, Inches
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    if generated_images is None:
+        generated_images = {}
 
     lines = text.split('\n')
     i = 0
     in_code_block = False
     code_lines = []
+    diagram_counter = 0  # tracks which [DIAGRAM] we're on
 
     while i < len(lines):
         line = lines[i]
         stripped = line.strip()
 
-        # ── Code block handling ────────────────────────────────────────────
+        # Code block handling
         if stripped.startswith('```'):
             if in_code_block:
-                # End of code block
                 code_text = '\n'.join(code_lines)
                 p = doc.add_paragraph()
                 run = p.add_run(code_text)
                 run.font.name = 'Consolas'
                 run.font.size = Pt(9)
                 run.font.color.rgb = RGBColor(0x20, 0x20, 0x20)
-                # Add background shading
                 from docx.oxml.ns import qn
                 shading = dx.oxml.OxmlElement('w:shd')
                 shading.set(qn('w:val'), 'clear')
@@ -775,12 +1044,48 @@ def _render_markdown_to_docx(doc, text: str):
             i += 1
             continue
 
-        # ── Empty line ─────────────────────────────────────────────────────
+        # Empty line
         if not stripped:
             i += 1
             continue
 
-        # ── Headings ───────────────────────────────────────────────────────
+        # ── [DIAGRAM: ...] marker handling ──────────────────────────────
+        diag_match = re.match(r'^\[DIAGRAM:\s*(.+?)\]$', stripped)
+        if diag_match:
+            desc = diag_match.group(1)
+            if diagram_counter in generated_images:
+                # Add a caption above the image
+                cap = doc.add_paragraph()
+                cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                cap_run = cap.add_run(f"Figure {diagram_counter + 1}: {desc}")
+                cap_run.font.size = Pt(9)
+                cap_run.font.italic = True
+                cap_run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+
+                # Embed the image
+                try:
+                    pic = doc.add_picture(generated_images[diagram_counter], width=Inches(4.5))
+                    last_paragraph = doc.paragraphs[-1]
+                    last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                except Exception as e:
+                    print(f"   Warning: Could not embed image: {e}")
+                    fallback = doc.add_paragraph(f"[Diagram: {desc}]")
+                    fallback.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+                doc.add_paragraph("")  # spacer after image
+            else:
+                # Image generation failed — leave as text placeholder
+                placeholder = doc.add_paragraph()
+                placeholder.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                ph_run = placeholder.add_run(f"[Diagram: {desc}]")
+                ph_run.font.italic = True
+                ph_run.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
+
+            diagram_counter += 1
+            i += 1
+            continue
+
+        # Headings
         if stripped.startswith('####'):
             heading_text = stripped.lstrip('#').strip()
             doc.add_heading(heading_text, level=4)
@@ -802,13 +1107,13 @@ def _render_markdown_to_docx(doc, text: str):
             i += 1
             continue
 
-        # ── Horizontal rules ───────────────────────────────────────────────
+        # Horizontal rules
         if re.match(r'^[-=_]{3,}$', stripped):
             doc.add_paragraph("─" * 50)
             i += 1
             continue
 
-        # ── Numbered list items ────────────────────────────────────────────
+        # Numbered list items
         if re.match(r'^\d+[\.\)]\s', stripped):
             p = doc.add_paragraph(style='List Number')
             content = re.sub(r'^\d+[\.\)]\s*', '', stripped)
@@ -816,7 +1121,7 @@ def _render_markdown_to_docx(doc, text: str):
             i += 1
             continue
 
-        # ── Bullet list items ──────────────────────────────────────────────
+        # Bullet list items
         if stripped.startswith(('- ', '* ', '+ ')):
             p = doc.add_paragraph(style='List Bullet')
             content = stripped[2:].strip()
@@ -824,7 +1129,7 @@ def _render_markdown_to_docx(doc, text: str):
             i += 1
             continue
 
-        # ── Bold heading line ──────────────────────────────────────────────
+        # Bold heading line
         if stripped.startswith('**') and stripped.endswith('**') and not ' ' in stripped[2:-2]:
             p = doc.add_paragraph()
             run = p.add_run(stripped.strip('*'))
@@ -833,24 +1138,20 @@ def _render_markdown_to_docx(doc, text: str):
             i += 1
             continue
 
-        # ── Regular paragraph ──────────────────────────────────────────────
+        # Regular paragraph
         p = doc.add_paragraph()
         _add_formatted_runs(p, stripped)
         i += 1
 
 
 def _add_formatted_runs(paragraph, text: str):
-    """
-    Add text to a paragraph with inline **bold** and *italic* formatting.
-    """
-    # Split on bold markers
+    """Add text to a paragraph with inline **bold** and *italic* formatting."""
     parts = re.split(r'(\*\*.*?\*\*)', text)
     for part in parts:
         if part.startswith('**') and part.endswith('**'):
             run = paragraph.add_run(part[2:-2])
             run.bold = True
         else:
-            # Split on italic markers
             italic_parts = re.split(r'(\*.*?\*)', part)
             for ip in italic_parts:
                 if ip.startswith('*') and ip.endswith('*') and len(ip) > 2:
@@ -869,10 +1170,8 @@ def solve_assignment(command: str) -> str:
     Main function called from automation_1.py for file-based assignment solving.
     Parses command -> searches filesystem -> reads file -> AI completes -> saves result.
     """
-    # 1. Extract filename from command
     filename = parse_filename(command)
     if not filename:
-        # Maybe it's a description-only command
         description = parse_description(command)
         if description:
             return solve_assignment_from_description(description)
@@ -882,7 +1181,6 @@ def solve_assignment(command: str) -> str:
             "'solve my assignment about thermodynamics laws'"
         )
 
-    # 2. Search filesystem for the file
     print(f"[Assignment Solver] Searching for '{filename}'...")
     filepath = _find_file(filename)
 
@@ -905,7 +1203,6 @@ def solve_assignment(command: str) -> str:
     found_name = os.path.basename(filepath)
     print(f"[Assignment Solver] Found: {filepath}")
 
-    # 3. Read the file
     try:
         content = _read_file(filepath)
     except RuntimeError as e:
@@ -916,7 +1213,6 @@ def solve_assignment(command: str) -> str:
     if not content.strip():
         return f"File '{found_name}' appears to be empty - nothing to complete."
 
-    # 4. Detect subject and solve
     subject = _detect_subject(content)
     print(f"[Assignment Solver] Read {len(content)} chars from '{found_name}' (subject: {subject})")
     print(f"[Assignment Solver] Sending to AI for completion...")
@@ -926,7 +1222,6 @@ def solve_assignment(command: str) -> str:
     except Exception as e:
         return f"AI error: {e}"
 
-    # 5. Save result
     try:
         base_name = os.path.splitext(found_name)[0]
         out_path = _save_result(filepath, base_name, result, source_type="file")
@@ -951,21 +1246,11 @@ def solve_assignment(command: str) -> str:
 def solve_assignment_from_description(description: str) -> str:
     """
     Solve an assignment based on a text description.
-    No file needed - just describe what the assignment is about.
-
-    Args:
-        description: The assignment description / topic
-
-    Returns:
-        Result message with solution summary and file location
+    Returns the solution text (NOT saved yet — caller decides to save or preview).
     """
     if not description or not description.strip():
-        return (
-            "Please provide an assignment description.\n"
-            "Example: 'solve my assignment about thermodynamics laws and their applications'"
-        )
+        return "Please provide an assignment description."
 
-    # Detect subject
     subject = _detect_subject(description)
     print(f"[Assignment Solver] Description mode (subject: {subject})")
     print(f"[Assignment Solver] Description: {description[:100]}...")
@@ -976,49 +1261,21 @@ def solve_assignment_from_description(description: str) -> str:
     except Exception as e:
         return f"AI error: {e}"
 
-    # Save result
-    try:
-        # Create a short title from description
-        title_words = description.split()[:8]
-        title = " ".join(title_words)
-        desktop = _get_real_desktop()
-        out_path = _save_result(desktop, title, result, source_type="description")
-        saved_name = os.path.basename(out_path)
-    except Exception as e:
-        return (
-            f"Assignment solved!\n"
-            f"Could not save file: {e}\n\n"
-            f"{'='*50}\n{result}"
-        )
-
-    return (
-        f"Assignment solved from description!\n"
-        f"Topic: {description[:80]}{'...' if len(description) > 80 else ''}\n"
-        f"Subject detected: {subject}\n"
-        f"Saved as: {saved_name} (Word .docx on Desktop)\n"
-        f"{'─'*50}\n"
-        f"{result[:800]}{'...[see saved .docx for full answer]' if len(result) > 800 else ''}\n"
-        f"{'─'*50}"
-    )
+    # Just return the solution text — the frontend will handle preview/save
+    return result
 
 
-def solve_assignment_from_file_upload(filepath: str) -> str:
+def solve_assignment_from_file_upload(filepath: str, instructions: str = "") -> str:
     """
     Solve an assignment from an uploaded file path.
-    Called from the new API endpoint for file uploads.
-
-    Args:
-        filepath: Full path to the assignment file
-
-    Returns:
-        Result message with solution summary and file location
+    Optionally accepts instructions on how the assignment should be done.
+    Returns the solution text (NOT saved yet — caller decides to save or preview).
     """
     if not os.path.isfile(filepath):
         return f"File not found: {filepath}"
 
     found_name = os.path.basename(filepath)
 
-    # Read the file
     try:
         content = _read_file(filepath)
     except RuntimeError as e:
@@ -1029,35 +1286,41 @@ def solve_assignment_from_file_upload(filepath: str) -> str:
     if not content.strip():
         return f"File '{found_name}' appears to be empty - nothing to complete."
 
-    # Detect subject and solve
-    subject = _detect_subject(content)
+    # Combine file content and instructions for subject detection
+    combined = content
+    if instructions and instructions.strip():
+        combined = f"{content}\n\nInstructions: {instructions}"
+
+    subject = _detect_subject(combined)
     print(f"[Assignment Solver] File upload mode: '{found_name}' (subject: {subject})")
+    if instructions:
+        print(f"[Assignment Solver] User instructions: {instructions[:100]}...")
     print(f"[Assignment Solver] Sending to AI for completion...")
 
     try:
-        result = _ask_ai(content, found_name, subject, source_type="file")
+        result = _ask_ai(content, found_name, subject, source_type="file", instructions=instructions)
     except Exception as e:
         return f"AI error: {e}"
 
-    # Save result
-    try:
-        base_name = os.path.splitext(found_name)[0]
-        out_path = _save_result(filepath, base_name, result, source_type="file")
-        saved_name = os.path.basename(out_path)
-    except Exception as e:
-        return (
-            f"Assignment completed for '{found_name}'!\n"
-            f"Could not save file: {e}\n\n"
-            f"{'='*50}\n{result}"
-        )
+    # Just return the solution text — the frontend will handle preview/save
+    return result
 
-    return (
-        f"Assignment '{found_name}' completed!\n"
-        f"Saved as: {saved_name} (Word .docx)\n"
-        f"{'─'*50}\n"
-        f"{result[:800]}{'...[see saved .docx for full answer]' if len(result) > 800 else ''}\n"
-        f"{'─'*50}"
-    )
+
+def save_assignment_docx(solution_text: str, title: str) -> str:
+    """
+    Save a solution text as a .docx file on the Desktop.
+    Called from the preview/save endpoint after the user has reviewed and edited.
+    Handles [DIAGRAM: ...] markers by generating and embedding images.
+    """
+    if not solution_text or not solution_text.strip():
+        return "No solution text to save."
+
+    try:
+        out_path = save_docx_from_text(solution_text.strip(), title)
+        saved_name = os.path.basename(out_path)
+        return f"Assignment saved as: {saved_name}\nLocation: {out_path}"
+    except Exception as e:
+        return f"Error saving file: {e}"
 
 
 # ─────────────────────────────────────────
@@ -1067,7 +1330,6 @@ def solve_assignment_from_file_upload(filepath: str) -> str:
 def get_solved_files(directory: str | None = None) -> list[dict]:
     """
     Returns a list of recently solved assignment files in the given directory.
-    Each entry: {"name": filename, "path": full_path, "date": modification_time}
     """
     search_dir = directory or _get_real_desktop()
     solved = []
@@ -1086,4 +1348,4 @@ def get_solved_files(directory: str | None = None) -> list[dict]:
         pass
 
     solved.sort(key=lambda x: x["date"], reverse=True)
-    return solved[:20]  # Return last 20
+    return solved[:20]

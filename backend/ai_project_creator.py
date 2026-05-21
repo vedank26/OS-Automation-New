@@ -5,7 +5,7 @@ import time
 from dotenv import load_dotenv  # type: ignore[import-untyped]
 from groq import Groq  # type: ignore[import-untyped]
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 api_key = os.getenv("GROQ_API_KEY")
 client = Groq(api_key=api_key) if api_key else None
