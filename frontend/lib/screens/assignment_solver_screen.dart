@@ -1,7 +1,4 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import '../models/log_entry.dart';
 import '../services/api_service.dart';
@@ -75,9 +72,25 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: [
-          'txt', 'pdf', 'docx', 'xlsx', 'csv', 'py', 'js',
-          'html', 'css', 'json', 'md', 'java', 'cpp', 'c',
-          'png', 'jpg', 'jpeg', 'bmp', 'webp',
+          'txt',
+          'pdf',
+          'docx',
+          'xlsx',
+          'csv',
+          'py',
+          'js',
+          'html',
+          'css',
+          'json',
+          'md',
+          'java',
+          'cpp',
+          'c',
+          'png',
+          'jpg',
+          'jpeg',
+          'bmp',
+          'webp',
         ],
       );
 
@@ -202,7 +215,7 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Describe Your Assignment',
             style: TextStyle(
               fontFamily: 'monospace',
@@ -212,7 +225,7 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
             ),
           ),
           const SizedBox(height: 8),
-          Text(
+          const Text(
             'Tell us what your assignment is about. Be specific — include the subject, '
             'topic, questions, or any details. The AI will create a complete solution document.',
             style: TextStyle(
@@ -237,12 +250,13 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
               ),
               cursorColor: AppColors.accentBlue,
               decoration: InputDecoration(
-                hintText: 'Example: "Write about Newton\'s three laws of motion '
+                hintText:
+                    'Example: "Write about Newton\'s three laws of motion '
                     'with examples and derivations for my Physics class"',
                 hintStyle: TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 12,
-                  color: AppColors.textSecondary.withOpacity(0.5),
+                  color: AppColors.textSecondary.withValues(alpha: 0.5),
                   height: 1.6,
                 ),
                 filled: true,
@@ -306,7 +320,7 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Upload Assignment File',
             style: TextStyle(
               fontFamily: 'monospace',
@@ -316,7 +330,7 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
             ),
           ),
           const SizedBox(height: 8),
-          Text(
+          const Text(
             'Upload your assignment file and optionally describe how you want it done.',
             style: TextStyle(
               fontFamily: 'monospace',
@@ -353,7 +367,7 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
                     size: 40,
                     color: _selectedFileName != null
                         ? AppColors.successGreen
-                        : AppColors.textSecondary.withOpacity(0.5),
+                        : AppColors.textSecondary.withValues(alpha: 0.5),
                   ),
                   const SizedBox(height: 10),
                   Text(
@@ -376,7 +390,7 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
                       style: TextStyle(
                         fontFamily: 'monospace',
                         fontSize: 10,
-                        color: AppColors.textSecondary.withOpacity(0.5),
+                        color: AppColors.textSecondary.withValues(alpha: 0.5),
                       ),
                     ),
                   ],
@@ -398,21 +412,22 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
               children: [
                 // Header
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: const BoxDecoration(
                     border: Border(
                       bottom: BorderSide(color: AppColors.border),
                     ),
                   ),
                   child: Row(
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.chat_bubble_outline,
                         size: 16,
                         color: AppColors.accentBlue,
                       ),
                       const SizedBox(width: 8),
-                      Text(
+                      const Text(
                         'How should this assignment be done?',
                         style: TextStyle(
                           fontFamily: 'monospace',
@@ -427,7 +442,7 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
                         style: TextStyle(
                           fontFamily: 'monospace',
                           fontSize: 10,
-                          color: AppColors.textSecondary.withOpacity(0.6),
+                          color: AppColors.textSecondary.withValues(alpha: 0.6),
                         ),
                       ),
                     ],
@@ -452,7 +467,7 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
                     hintStyle: TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 11,
-                      color: AppColors.textSecondary.withOpacity(0.4),
+                      color: AppColors.textSecondary.withValues(alpha: 0.4),
                       height: 1.5,
                     ),
                     border: InputBorder.none,
@@ -475,7 +490,8 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.accentBlue,
                 foregroundColor: Colors.white,
-                disabledBackgroundColor: AppColors.accentBlue.withOpacity(0.3),
+                disabledBackgroundColor:
+                    AppColors.accentBlue.withValues(alpha: 0.3),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -486,9 +502,9 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
                 ),
               ),
               child: _isProcessing
-                  ? Row(
+                  ? const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
+                      children: [
                         SizedBox(
                           width: 18,
                           height: 18,
@@ -501,9 +517,9 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
                         Text('Solving...'),
                       ],
                     )
-                  : Row(
+                  : const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
+                      children: [
                         Icon(Icons.auto_fix_high, size: 18),
                         SizedBox(width: 8),
                         Text('Solve Assignment'),
@@ -524,7 +540,7 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Supported formats:',
                   style: TextStyle(
                     fontFamily: 'monospace',
@@ -538,27 +554,45 @@ class _AssignmentSolverScreenState extends State<AssignmentSolverScreen>
                   spacing: 6,
                   runSpacing: 4,
                   children: [
-                    '.txt', '.pdf', '.docx', '.xlsx', '.csv',
-                    '.py', '.js', '.html', '.css', '.json',
-                    '.md', '.java', '.cpp', '.c',
-                    '.png', '.jpg', '.jpeg', '.bmp', '.webp',
-                  ].map((ext) => Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6, vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.chipBg,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      ext,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 10,
-                        color: AppColors.accentBlue,
-                      ),
-                    ),
-                  )).toList(),
+                    '.txt',
+                    '.pdf',
+                    '.docx',
+                    '.xlsx',
+                    '.csv',
+                    '.py',
+                    '.js',
+                    '.html',
+                    '.css',
+                    '.json',
+                    '.md',
+                    '.java',
+                    '.cpp',
+                    '.c',
+                    '.png',
+                    '.jpg',
+                    '.jpeg',
+                    '.bmp',
+                    '.webp',
+                  ]
+                      .map((ext) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.chipBg,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              ext,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 10,
+                                color: AppColors.accentBlue,
+                              ),
+                            ),
+                          ))
+                      .toList(),
                 ),
               ],
             ),
@@ -653,7 +687,8 @@ class _AssignmentPreviewScreen extends StatefulWidget {
   });
 
   @override
-  State<_AssignmentPreviewScreen> createState() => _AssignmentPreviewScreenState();
+  State<_AssignmentPreviewScreen> createState() =>
+      _AssignmentPreviewScreenState();
 }
 
 class _AssignmentPreviewScreenState extends State<_AssignmentPreviewScreen> {
@@ -731,7 +766,7 @@ class _AssignmentPreviewScreenState extends State<_AssignmentPreviewScreen> {
             ),
             label: Text(
               _isEditing ? 'Preview' : 'Edit',
-              style: TextStyle(
+              style: const TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 12,
                 color: AppColors.accentBlue,
@@ -748,7 +783,7 @@ class _AssignmentPreviewScreenState extends State<_AssignmentPreviewScreen> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppColors.surface,
               border: Border(
                 bottom: BorderSide(color: AppColors.border),
@@ -767,7 +802,7 @@ class _AssignmentPreviewScreenState extends State<_AssignmentPreviewScreen> {
                     _isEditing
                         ? 'Edit the solution below. Changes will be reflected in the saved document.'
                         : 'Review the solved assignment below. Tap "Edit" to make changes before saving.',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 11,
                       color: AppColors.textSecondary,
@@ -787,7 +822,7 @@ class _AssignmentPreviewScreenState extends State<_AssignmentPreviewScreen> {
           // ── Bottom action bar ──
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppColors.surface,
               border: Border(
                 top: BorderSide(color: AppColors.border),
@@ -884,14 +919,16 @@ class _AssignmentPreviewScreenState extends State<_AssignmentPreviewScreen> {
 
           // Horizontal rule
           if (RegExp(r'^[-=_]{3,}$').hasMatch(trimmed)) {
-            return Divider(
+            return const Divider(
               color: AppColors.border,
               height: 24,
             );
           }
 
           // Bullet list
-          if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('+ ')) {
+          if (trimmed.startsWith('- ') ||
+              trimmed.startsWith('* ') ||
+              trimmed.startsWith('+ ')) {
             return _bulletItem(trimmed.substring(2).trim());
           }
 
@@ -936,7 +973,7 @@ class _AssignmentPreviewScreenState extends State<_AssignmentPreviewScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             '  •  ',
             style: TextStyle(
               fontFamily: 'monospace',
@@ -960,7 +997,7 @@ class _AssignmentPreviewScreenState extends State<_AssignmentPreviewScreen> {
         children: [
           Text(
             '$num. ',
-            style: TextStyle(
+            style: const TextStyle(
               fontFamily: 'monospace',
               fontSize: 12,
               color: AppColors.accentBlue,
@@ -1010,7 +1047,8 @@ class _AssignmentPreviewScreenState extends State<_AssignmentPreviewScreen> {
 
       if (nextMatch == null || nextSpecial > 0) {
         parts.add(TextSpan(
-          text: remaining.substring(0, nextSpecial > 0 ? nextSpecial : remaining.length),
+          text: remaining.substring(
+              0, nextSpecial > 0 ? nextSpecial : remaining.length),
           style: const TextStyle(
             fontFamily: 'monospace',
             fontSize: 12,
@@ -1052,7 +1090,7 @@ class _AssignmentPreviewScreenState extends State<_AssignmentPreviewScreen> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.accentBlue.withOpacity(0.5)),
+        border: Border.all(color: AppColors.accentBlue.withValues(alpha: 0.5)),
       ),
       child: TextField(
         controller: _editCtrl,
@@ -1071,7 +1109,7 @@ class _AssignmentPreviewScreenState extends State<_AssignmentPreviewScreen> {
           hintStyle: TextStyle(
             fontFamily: 'monospace',
             fontSize: 12,
-            color: AppColors.textSecondary.withOpacity(0.3),
+            color: AppColors.textSecondary.withValues(alpha: 0.3),
           ),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.all(16),

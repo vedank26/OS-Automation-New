@@ -10,35 +10,36 @@ class QuickCommands extends StatelessWidget {
   /// Called when the assignment solver chip is tapped (navigates to solver screen)
   final VoidCallback? onAssignmentSolver;
 
-  const QuickCommands({super.key, required this.onCommand, this.onAssignmentSolver});
+  const QuickCommands(
+      {super.key, required this.onCommand, this.onAssignmentSolver});
 
   // ── chip definitions ────────────────────────────────────────────
   static const List<_ChipDef> _chips = [
-    _ChipDef('⚡', 'Session',       'start coding session', false),
-    _ChipDef('🖥️', 'VS Code',       'open vscode',          false),
-    _ChipDef('🌐', 'Chrome',        'open chrome',          false),
-    _ChipDef('🎬', 'YouTube',       'open youtube',         false),
-    _ChipDef('📁', 'New Folder',    '',                     true,  _DialogKind.folder),
-    _ChipDef('📸', 'Screenshot',    'take screenshot',      false),
-    _ChipDef('🔍', 'Search',        '',                     true,  _DialogKind.search),
-    _ChipDef('🖱️', 'Click',         'click',                false),
-    _ChipDef('⌨️', 'Type',          '',                     true,  _DialogKind.type),
-    _ChipDef('🗂️', 'Explorer',      'open explorer',        false),
-    _ChipDef('📝', 'Notepad',       'open notepad',         false),
-    _ChipDef('🔄', 'Switch Window', 'switch window',        false),
-    _ChipDef('🖥', 'Task Mgr',      'open task manager',    false),
-    _ChipDef('⬇️', 'Scroll Down',   'scroll down',          false),
-    _ChipDef('⬆️', 'Scroll Up',     'scroll up',            false),
-    _ChipDef('🖥', 'Show Desktop',  'show desktop',          false),
+    _ChipDef('⚡', 'Session', 'start coding session', false),
+    _ChipDef('🖥️', 'VS Code', 'open vscode', false),
+    _ChipDef('🌐', 'Chrome', 'open chrome', false),
+    _ChipDef('🎬', 'YouTube', 'open youtube', false),
+    _ChipDef('📁', 'New Folder', '', true, _DialogKind.folder),
+    _ChipDef('📸', 'Screenshot', 'take screenshot', false),
+    _ChipDef('🔍', 'Search', '', true, _DialogKind.search),
+    _ChipDef('🖱️', 'Click', 'click', false),
+    _ChipDef('⌨️', 'Type', '', true, _DialogKind.type),
+    _ChipDef('🗂️', 'Explorer', 'open explorer', false),
+    _ChipDef('📝', 'Notepad', 'open notepad', false),
+    _ChipDef('🔄', 'Switch Window', 'switch window', false),
+    _ChipDef('🖥', 'Task Mgr', 'open task manager', false),
+    _ChipDef('⬇️', 'Scroll Down', 'scroll down', false),
+    _ChipDef('⬆️', 'Scroll Up', 'scroll up', false),
+    _ChipDef('🖥', 'Show Desktop', 'show desktop', false),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 48,
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: AppColors.surface,
-        border: const Border(
+        border: Border(
           top: BorderSide(color: AppColors.border),
           bottom: BorderSide(color: AppColors.border),
         ),
@@ -75,7 +76,7 @@ class QuickCommands extends StatelessWidget {
     final ctrl = TextEditingController();
     final result = await showDialog<String>(
       context: context,
-      barrierColor: Colors.black.withOpacity(0.7),
+      barrierColor: Colors.black.withValues(alpha: 0.7),
       builder: (ctx) => Dialog(
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(
@@ -122,7 +123,7 @@ class QuickCommands extends StatelessWidget {
                   hintStyle: TextStyle(
                     fontFamily: 'monospace',
                     fontSize: 12,
-                    color: AppColors.textSecondary.withOpacity(0.5),
+                    color: AppColors.textSecondary.withValues(alpha: 0.5),
                   ),
                   enabledBorder: const OutlineInputBorder(
                     borderSide: BorderSide(color: AppColors.border),
@@ -205,22 +206,22 @@ class QuickCommands extends StatelessWidget {
     final titles = {
       _DialogKind.folder: 'Create New Folder',
       _DialogKind.search: 'Search Google',
-      _DialogKind.type:   'Type Text',
+      _DialogKind.type: 'Type Text',
     };
     final hints = {
       _DialogKind.folder: 'Folder name...',
       _DialogKind.search: 'Search query...',
-      _DialogKind.type:   'Text to type...',
+      _DialogKind.type: 'Text to type...',
     };
     final buttonLabels = {
       _DialogKind.folder: 'Create',
       _DialogKind.search: 'Search',
-      _DialogKind.type:   'Type',
+      _DialogKind.type: 'Type',
     };
 
     return showDialog<String>(
       context: context,
-      barrierColor: Colors.black.withOpacity(0.7),
+      barrierColor: Colors.black.withValues(alpha: 0.7),
       builder: (ctx) => Dialog(
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(
@@ -257,7 +258,7 @@ class QuickCommands extends StatelessWidget {
                   hintStyle: TextStyle(
                     fontFamily: 'monospace',
                     fontSize: 13,
-                    color: AppColors.textSecondary.withOpacity(0.5),
+                    color: AppColors.textSecondary.withValues(alpha: 0.5),
                   ),
                   enabledBorder: const OutlineInputBorder(
                     borderSide: BorderSide(color: AppColors.border),
@@ -362,27 +363,29 @@ class _AssignmentSolverChipState extends State<_AssignmentSolverChip> {
           gradient: _pressed
               ? LinearGradient(
                   colors: [
-                    AppColors.accentBlue.withOpacity(0.3),
-                    AppColors.accentBlue.withOpacity(0.15),
+                    AppColors.accentBlue.withValues(alpha: 0.3),
+                    AppColors.accentBlue.withValues(alpha: 0.15),
                   ],
                 )
               : LinearGradient(
                   colors: [
-                    AppColors.accentBlue.withOpacity(0.15),
-                    AppColors.accentBlue.withOpacity(0.05),
+                    AppColors.accentBlue.withValues(alpha: 0.15),
+                    AppColors.accentBlue.withValues(alpha: 0.05),
                   ],
                 ),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
-            color: _pressed ? AppColors.accentBlue : AppColors.accentBlue.withOpacity(0.5),
+            color: _pressed
+                ? AppColors.accentBlue
+                : AppColors.accentBlue.withValues(alpha: 0.5),
             width: _pressed ? 1.2 : 1,
           ),
         ),
-        child: Row(
+        child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('📝', style: TextStyle(fontSize: 13)),
-            const SizedBox(width: 5),
+            Text('📝', style: TextStyle(fontSize: 13)),
+            SizedBox(width: 5),
             Text(
               'Solve',
               style: TextStyle(
@@ -428,7 +431,7 @@ class _QuickChipState extends State<_QuickChip> {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
         decoration: BoxDecoration(
           color: _pressed
-              ? AppColors.accentBlue.withOpacity(0.15)
+              ? AppColors.accentBlue.withValues(alpha: 0.15)
               : AppColors.chipBg,
           borderRadius: BorderRadius.circular(6),
           border: Border.all(

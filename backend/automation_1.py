@@ -62,6 +62,7 @@ from assignment_solver import (
     is_assignment_command,
     solve_assignment,
 )
+from app_launcher import launch_app
 
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -403,9 +404,10 @@ def execute_command(command: str):
 
         open_match = re.match(r"^open\s+(.+)$", raw_command, flags=re.IGNORECASE)
         if open_match:
-            app_result = _open_dynamic_app(open_match.group(1))
-            if app_result is not None:
-                return app_result
+            app_name = open_match.group(1).strip()
+            if not re.fullmatch(r"\d+", app_name):
+                app_result = launch_app(app_name)
+                return _result(app_result.message)
 
         # ─────────────────────────────────────────
         # 📝 ASSIGNMENT SOLVER  <<< NEW BLOCK
@@ -561,9 +563,10 @@ def execute_command(command: str):
                 f.write('# Main Python file\n\nprint("Hello World")\n')
             with open(os.path.join(project_path, "README.md"), "w", encoding="utf-8") as f:
                 f.write(f"# {project_name}\n\nCreated by FlowForge AI")
-            subprocess.Popen(f'code "{project_path}"', shell=True)
-            _bring_window_to_front(["visual studio code", "vscode"])
-            return _result(f"Python project '{project_name}' created and opened in VS Code.")
+            launch_result = launch_app("vs code", [project_path])
+            if launch_result.success:
+                return _result(f"Python project '{project_name}' created and opened in VS Code.")
+            return _result(f"Python project '{project_name}' created on Desktop, but VS Code could not be opened.")
 
         # ─────────────────────────────────────────
         # 🤖 AI PROJECT CREATION
@@ -999,12 +1002,17 @@ def execute_command(command: str):
         # ─────────────────────────────────────────
 
         elif "start coding session" in normalized_command:
-            subprocess.run("code", shell=True)
-            subprocess.run("start chrome", shell=True)
             folder_path = os.path.join(os.path.expanduser("~"), "Desktop", "TodayWork")
             os.makedirs(folder_path, exist_ok=True)
-            _bring_window_to_front(["visual studio code", "vscode"])
-            return _result("Coding session started. VS Code and Chrome opened, TodayWork folder created.")
+            vscode_result = launch_app("vs code")
+            chrome_result = launch_app("chrome")
+            if vscode_result.success and chrome_result.success:
+                return _result("Coding session started. VS Code and Chrome opened, TodayWork folder created.")
+            failures = [result.message for result in [vscode_result, chrome_result] if not result.success]
+            return _result(
+                "Coding session started partially. "
+                f"TodayWork folder created. {' '.join(failures)}"
+            )
 
         # ─────────────────────────────────────────
         # 🎵 MUSIC

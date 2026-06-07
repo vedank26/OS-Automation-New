@@ -33,14 +33,14 @@ class TerminalLog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.terminal,
-              size: 48, color: AppColors.textSecondary.withOpacity(0.3)),
+              size: 48, color: AppColors.textSecondary.withValues(alpha: 0.3)),
           const SizedBox(height: 12),
           Text(
             'No logs yet',
             style: TextStyle(
               fontFamily: 'monospace',
               fontSize: 13,
-              color: AppColors.textSecondary.withOpacity(0.4),
+              color: AppColors.textSecondary.withValues(alpha: 0.4),
             ),
           ),
         ],
@@ -69,7 +69,7 @@ class _LogLine extends StatelessWidget {
             style: TextStyle(
               fontFamily: 'monospace',
               fontSize: 11.5,
-              color: AppColors.textSecondary.withOpacity(0.6),
+              color: AppColors.textSecondary.withValues(alpha: 0.6),
             ),
           ),
           const SizedBox(width: 8),
@@ -77,10 +77,10 @@ class _LogLine extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
             decoration: BoxDecoration(
-              color: entry.tagColor.withOpacity(0.15),
+              color: entry.tagColor.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(3),
               border: Border.all(
-                  color: entry.tagColor.withOpacity(0.35), width: 0.8),
+                  color: entry.tagColor.withValues(alpha: 0.35), width: 0.8),
             ),
             child: Text(
               '[${entry.tagLabel}]',
