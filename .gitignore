@@ -34,3 +34,27 @@
 .DS_Store
 Thumbs.db
 .env
+# Python
+__pycache__/
+*.py[cod]
+
+# Flutter
+.dart_tool/
+build/
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Environment
+.env
+
+# Python virtual environments
+venv/
+.venv/
