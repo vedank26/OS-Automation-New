@@ -32,13 +32,16 @@ def _heuristic_analysis(error_text: str) -> dict:
     actions = []
     root_cause = "The project failed during execution."
     exact_fix = "Review the captured error and apply a safe local fix."
+    # matched=True means a known deterministic error was detected and Groq can be bypassed
+    matched = False
 
     missing_relative = re.search(
-        r"(?:Can't resolve|Could not resolve)\s+['\"](\.[^'\"]+)['\"]",
+        r"(?:Can't resolve|Could not resolve)\s+['\"](\.\.[^'\"]+)['\"]",
         error_text,
         re.IGNORECASE,
     )
     if missing_relative:
+        matched = True
         missing_path = missing_relative.group(1).replace("/", os.sep)
         root_cause = f"Missing local file {missing_relative.group(1)}."
         exact_fix = f"Create {missing_relative.group(1)} so the import can resolve."
@@ -59,21 +62,29 @@ def _heuristic_analysis(error_text: str) -> dict:
         error_text,
     )
     if missing_python:
+        matched = True
         package = missing_python.group(1).split(".")[0]
         root_cause = f"Missing Python package {package}."
         exact_fix = f"Install Python package {package}."
         actions.append({"type": "install_python_package", "package": package})
 
+    # Expanded npm pattern: covers Vite, Rolldown, Rollup, Node resolver errors
+    # Supports standard, scoped (@scope/pkg), and nested (pkg/subpath) package names
     missing_npm = re.search(
-        r"(?:Can't resolve|Could not resolve)\s+['\"]([^.'\"][^'\"]*)['\"]",
+        r"(?:failed to resolve import|Can't resolve|Could not resolve|Cannot find module)\s+['\"]([^.'\"][^'\"]*)['\"]",
         error_text,
         re.IGNORECASE,
     )
     if missing_npm:
-        package = missing_npm.group(1).split("/")[0]
-        if package.startswith("@"):
-            parts = missing_npm.group(1).split("/")
+        matched = True
+        raw = missing_npm.group(1)
+        # For scoped packages (@scope/pkg or @scope/pkg/subpath), keep first two segments
+        if raw.startswith("@"):
+            parts = raw.split("/")
             package = "/".join(parts[:2])
+        else:
+            # For standard and nested imports (pkg or pkg/subpath), keep first segment only
+            package = raw.split("/")[0]
         root_cause = f"Missing npm package {package}."
         exact_fix = f"Install npm package {package}."
         actions.append({"type": "install_npm_package", "package": package})
@@ -83,12 +94,25 @@ def _heuristic_analysis(error_text: str) -> dict:
         "exact_fix": exact_fix,
         "files_to_modify": [],
         "actions": actions,
+        "matched": matched,
     }
 
 
 def analyze_error(error_text: str) -> dict:
+    # Step 1: Run deterministic heuristic analysis first
+    heuristic = _heuristic_analysis(error_text)
+
+    # Step 2: If the heuristic confidently matched a known error, bypass Groq entirely
+    if heuristic.get("matched"):
+        result = heuristic.copy()
+        result.pop("matched", None)  # Strip internal flag before returning to caller
+        return result
+
+    # Step 3: No deterministic match — fall back to Groq for complex errors
     if not _client:
-        return _heuristic_analysis(error_text)
+        result = heuristic.copy()
+        result.pop("matched", None)
+        return result
 
     prompt = f"""You are an expert software engineer.
 
@@ -128,9 +152,11 @@ Only include safe project-local file edits. Do not include unrelated refactors."
         )
         analysis = _clean_json(response.choices[0].message.content)
     except Exception:
-        analysis = _heuristic_analysis(error_text)
+        result = heuristic.copy()
+        result.pop("matched", None)
+        return result
 
-    heuristic = _heuristic_analysis(error_text)
+    # Merge heuristic actions into Groq result if Groq returned nothing actionable
     if not analysis.get("actions") and not analysis.get("files_to_modify"):
         analysis["actions"] = heuristic.get("actions", [])
     return analysis

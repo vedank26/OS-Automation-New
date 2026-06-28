@@ -10,8 +10,14 @@ class QuickCommands extends StatelessWidget {
   /// Called when the assignment solver chip is tapped (navigates to solver screen)
   final VoidCallback? onAssignmentSolver;
 
+  /// Called when the project creation chip is tapped
+  final VoidCallback? onProjectCreation;
+
   const QuickCommands(
-      {super.key, required this.onCommand, this.onAssignmentSolver});
+      {super.key,
+      required this.onCommand,
+      this.onAssignmentSolver,
+      this.onProjectCreation});
 
   // ── chip definitions ────────────────────────────────────────────
   static const List<_ChipDef> _chips = [
@@ -47,11 +53,21 @@ class QuickCommands extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        itemCount: _chips.length + 1, // +1 for assignment solver
+        itemCount: _chips.length + 2, // +1 project creation, +1 assignment solver
         separatorBuilder: (_, __) => const SizedBox(width: 6),
         itemBuilder: (ctx, i) {
           if (i == 0) {
-            // Assignment Solver special chip (first position)
+            // Project Creation featured chip (first position)
+            return _ProjectCreationChip(
+              onTap: () {
+                if (onProjectCreation != null) {
+                  onProjectCreation!();
+                }
+              },
+            );
+          }
+          if (i == 1) {
+            // Assignment Solver special chip (second position)
             return _AssignmentSolverChip(
               onTap: () {
                 if (onAssignmentSolver != null) {
@@ -64,8 +80,8 @@ class QuickCommands extends StatelessWidget {
             );
           }
           return _QuickChip(
-            def: _chips[i - 1],
-            onTap: () => _handleTap(ctx, _chips[i - 1]),
+            def: _chips[i - 2],
+            onTap: () => _handleTap(ctx, _chips[i - 2]),
           );
         },
       ),
@@ -331,6 +347,76 @@ class _ChipDef {
     this.needsInput, [
     this.dialogKind,
   ]);
+}
+
+// ──────────────────────────────────────────────────────────────
+// Featured Project Creation Chip
+// ──────────────────────────────────────────────────────────────
+class _ProjectCreationChip extends StatefulWidget {
+  final VoidCallback onTap;
+  const _ProjectCreationChip({required this.onTap});
+
+  @override
+  State<_ProjectCreationChip> createState() => _ProjectCreationChipState();
+}
+
+class _ProjectCreationChipState extends State<_ProjectCreationChip> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+        decoration: BoxDecoration(
+          gradient: _pressed
+              ? const LinearGradient(
+                  colors: [Color(0xFF2563eb), Color(0xFF4f46e5)],
+                )
+              : const LinearGradient(
+                  colors: [Color(0xFF1d4ed8), Color(0xFF3730a3)],
+                ),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: _pressed
+                ? const Color(0xFF60a5fa)
+                : const Color(0xFF3b82f6).withValues(alpha: 0.6),
+            width: _pressed ? 1.2 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF2563eb).withValues(alpha: _pressed ? 0.4 : 0.2),
+              blurRadius: 8,
+              spreadRadius: 0,
+            ),
+          ],
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('🚀', style: TextStyle(fontSize: 13)),
+            SizedBox(width: 5),
+            Text(
+              'Project Creation',
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 11.5,
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ──────────────────────────────────────────────────────────────

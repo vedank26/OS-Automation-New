@@ -96,14 +96,24 @@ def _verify_localhost(port: int | None) -> bool:
         return True
 
     deadline = time.time() + READINESS_SECONDS
-    url = f"http://127.0.0.1:{port}"
+    url_ip = f"http://127.0.0.1:{port}"
+    url_host = f"http://localhost:{port}"
     while time.time() < deadline:
         try:
-            response = requests.get(url, timeout=2)
+            response = requests.get(url_ip, timeout=2)
             if response.status_code < 500:
                 return True
         except Exception:
-            time.sleep(0.7)
+            pass
+
+        try:
+            response = requests.get(url_host, timeout=2)
+            if response.status_code < 500:
+                return True
+        except Exception:
+            pass
+
+        time.sleep(0.7)
     return False
 
 
@@ -192,6 +202,8 @@ def _run_once(project_path: str, config: ProjectRunConfig) -> dict:
 
         if success_seen and _verify_localhost(config.port):
             logs.append("[SUCCESS] Localhost responded successfully")
+            if config.port:
+                webbrowser.open(f"http://localhost:{config.port}")
             return {"success": True, "error": None, "logs": logs}
 
         if process.poll() is not None and stream_closed:
@@ -199,6 +211,7 @@ def _run_once(project_path: str, config: ProjectRunConfig) -> dict:
 
     if process.poll() is None and config.port and _verify_localhost(config.port):
         logs.append("[SUCCESS] Localhost responded successfully")
+        webbrowser.open(f"http://localhost:{config.port}")
         return {"success": True, "error": None, "logs": logs}
 
     if process.poll() is None:
@@ -248,7 +261,7 @@ def run_project_with_repair(project_path: str, project_name: str | None = None, 
         workflow_logs.extend(run_result.get("logs", []))
 
         if run_result.get("success"):
-            port_line = f"\nLocalhost: http://127.0.0.1:{config.port}" if config.port else ""
+            port_line = f"\nLocalhost: http://localhost:{config.port}" if config.port else ""
             return {
                 "result": f"Project fixed successfully.{port_line}",
                 "logs": workflow_logs,
